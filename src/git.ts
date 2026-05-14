@@ -174,11 +174,14 @@ export class GitExplorer {
 
   private loadCommits() {
     // %x00 = literal NUL. We splice the format AFTER --graph, so each commit
-    // line looks like:   <graph_chars>\x00<sha>\x00<short>\x00<date>\x00<author>\x00<subject>
+    // line looks like:   <graph_chars>\x00<sha>\x00<short>\x00<date>\x00<author>\x00<subject>%d
     // Connector lines (pure graph, no commit) have no NUL and become non-selectable rows.
+    // --all so all branches show (the tree shape only appears when there are
+    // multiple refs); --decorate adds branch / tag names after the subject
+    // (with --color=always they come pre-colored).
     const r = spawnSync('git', [
-      'log', '--graph', '--color=always',
-      '--pretty=format:%x00%H%x00%h%x00%ad%x00%an%x00%s',
+      'log', '--graph', '--all', '--decorate', '--color=always',
+      '--pretty=format:%x00%H%x00%h%x00%ad%x00%an%x00%s%d',
       '--date=short', '-500',
     ], { cwd: this.root, encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 });
     if (r.status !== 0) {

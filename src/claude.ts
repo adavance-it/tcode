@@ -72,13 +72,16 @@ export class ClaudeChat {
       style: { fg: 'gray' },
     });
 
+    // NOTE: no `inputOnFocus: true`. With it, blessed's blur handler calls
+    // screen.rewindFocus(), which can recurse infinitely with screen._focus
+    // when the input loses focus to another focusable sibling (output / refs).
+    // We call readInput() explicitly in focusInput() instead.
     this.input = blessed.textbox({
       parent: this.container,
       top: 1,
       left: 1,
       right: 1,
       height: 1,
-      inputOnFocus: true,
       keys: true,
       mouse: true,
       style: { fg: theme.statusFg, bg: theme.dimBg },
@@ -168,7 +171,16 @@ export class ClaudeChat {
     });
 
     this.input.on('submit', () => this.ask());
-    this.input.on('cancel', () => this.onDefocus());
+    // Re-implement `inputOnFocus`'s focus→readInput half WITHOUT its
+    // blur→rewindFocus half (the part that loops with Screen._focus).
+    this.input.on('focus', () => {
+      if (!(this.input as any)._reading) (this.input as any).readInput();
+    });
+    // NOTE: we deliberately do NOT listen to 'cancel'. blessed emits 'cancel'
+    // on every blur of a textbox in readInput mode — including the blur that
+    // happens when the user presses Tab to move to `output` or `refsBox`. If
+    // we treated 'cancel' as "user wants to leave the chat", Tab would yank
+    // them back to the editor. Esc is bound explicitly below.
     this.input.key(['escape'], () => this.onDefocus());
     this.output.key(['escape'], () => this.onDefocus());
     this.refsBox.key(['escape'], () => this.onDefocus());
@@ -188,9 +200,15 @@ export class ClaudeChat {
       // refocused by App's onOpenFile handler.
       this.onOpenFile(r.path, r.line);
     });
+
+    // Detach from the screen until first show(). Even hidden, a mounted
+    // textbox can be picked up by blessed's focus pass at startup; the
+    // resulting blur loop is what was crashing tcode on macOS.
+    this.screen.remove(this.container);
   }
 
   show(opts: { context?: { file: string; range: [number, number]; text: string } } = {}) {
+    if (!this.container.parent) this.screen.append(this.container);
     this.visible = true;
     this.onShow();
     this.container.show();
