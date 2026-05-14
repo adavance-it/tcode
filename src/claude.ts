@@ -30,6 +30,9 @@ export class ClaudeChat {
   onOpenFile: (filePath: string, line?: number) => void = () => {};
   onShow: () => void = () => {};
   onHide: () => void = () => {};
+  // Esc inside the chat just yields focus back to the editor; the panel stays open.
+  // Use Ctrl+A from anywhere to actually toggle visibility.
+  onDefocus: () => void = () => {};
 
   constructor(screen: blessed.Widgets.Screen, root: string, theme: Theme) {
     this.screen = screen;
@@ -150,14 +153,14 @@ export class ClaudeChat {
       height: 1,
       tags: false,
       style: { fg: 'gray' },
-      content: '^N new  •  Tab cycle  •  Esc hide',
+      content: '^N new  •  Tab cycle  •  ^A close  •  Esc → editor',
     });
 
     this.input.on('submit', () => this.ask());
-    this.input.on('cancel', () => this.hide());
-    this.input.key(['escape'], () => this.hide());
-    this.output.key(['escape'], () => this.hide());
-    this.refsBox.key(['escape'], () => this.hide());
+    this.input.on('cancel', () => this.onDefocus());
+    this.input.key(['escape'], () => this.onDefocus());
+    this.output.key(['escape'], () => this.onDefocus());
+    this.refsBox.key(['escape'], () => this.onDefocus());
 
     this.input.key(['tab'], () => this.output.focus());
     this.output.key(['tab'], () => this.refsBox.focus());
@@ -170,7 +173,8 @@ export class ClaudeChat {
     this.refsBox.on('select', (_item: any, idx: number) => {
       const r = this.refs[idx];
       if (!r) return;
-      this.hide();
+      // Don't hide — chat is a side pane and stays open. The viewer will be
+      // refocused by App's onOpenFile handler.
       this.onOpenFile(r.path, r.line);
     });
   }

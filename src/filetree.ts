@@ -47,6 +47,13 @@ export class FileTree {
     });
 
     this.list.on('select', (_item: any, idx: number) => this.handleEnter(idx));
+    // Single click on an item → open file or toggle directory immediately.
+    // blessed.list's default 'element click' handler runs first and updates
+    // `selected` to the clicked index; we then act on that.
+    this.list.on('element click', () => {
+      const idx = (this.list as any).selected as number;
+      this.handleEnter(idx);
+    });
     this.list.key(['right', 'l'], () => this.expandCurrent());
     this.list.key(['left', 'h'], () => this.collapseCurrent());
     this.list.key(['space'], () => {

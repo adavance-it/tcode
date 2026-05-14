@@ -24,6 +24,11 @@ export class GitExplorer {
   private diff: blessed.Widgets.BoxElement;
   private hint: blessed.Widgets.BoxElement;
   private commits: Commit[] = [];
+  // Maps each list row to a commit index, or -1 for pure graph connector lines.
+  private commitRowMap: number[] = [];
+  // Last selected row that pointed at a real commit; used to skip over
+  // connector lines in the right direction.
+  private prevSelectedRow = 0;
   private files: string[] = [];
   private selectedCommit?: Commit;
   private mode: Mode = 'commits';
@@ -116,7 +121,10 @@ export class GitExplorer {
     });
 
     // commits mode wiring
-    this.commitsList.on('select item', () => this.previewCommitStat());
+    this.commitsList.on('select item', () => {
+      this.skipConnectorRow();
+      this.previewCommitStat();
+    });
     this.commitsList.on('select', () => this.openCommit());
     this.commitsList.key(['enter'], () => this.openCommit());
     this.commitsList.key(['tab'], () => this.diff.focus());
@@ -165,33 +173,82 @@ export class GitExplorer {
   }
 
   private loadCommits() {
+    // %x00 = literal NUL. We splice the format AFTER --graph, so each commit
+    // line looks like:   <graph_chars>\x00<sha>\x00<short>\x00<date>\x00<author>\x00<subject>
+    // Connector lines (pure graph, no commit) have no NUL and become non-selectable rows.
     const r = spawnSync('git', [
-      'log', '--pretty=format:%H|%h|%ad|%an|%s', '--date=short', '-500',
-    ], { cwd: this.root, encoding: 'utf8' });
+      'log', '--graph', '--color=always',
+      '--pretty=format:%x00%H%x00%h%x00%ad%x00%an%x00%s',
+      '--date=short', '-500',
+    ], { cwd: this.root, encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 });
     if (r.status !== 0) {
       this.commitsList.setItems(['(not a git repository, or git failed)']);
       this.commits = [];
+      this.commitRowMap = [];
       this.diff.setContent(r.stderr || '');
       return;
     }
-    this.commits = r.stdout.split('\n').filter(Boolean).map(line => {
-      const [sha, shortSha, date, author, ...subj] = line.split('|');
-      return { sha, shortSha, date, author, subject: subj.join('|') };
-    });
-    this.commitsList.setItems(this.commits.map(c =>
-      `${c.shortSha}  ${c.date}  ${truncate(c.author, 14)}  ${c.subject}`
-    ));
+    this.commits = [];
+    this.commitRowMap = [];
+    const items: string[] = [];
+    for (const rawLine of r.stdout.split('\n')) {
+      const nulIdx = rawLine.indexOf('\x00');
+      if (nulIdx === -1) {
+        // Pure graph connector — keep it visible but mark as non-commit.
+        items.push(rawLine);
+        this.commitRowMap.push(-1);
+        continue;
+      }
+      const graph = rawLine.slice(0, nulIdx);
+      const [sha, shortSha, date, author, subject] = rawLine.slice(nulIdx + 1).split('\x00');
+      this.commits.push({ sha, shortSha, date, author, subject });
+      this.commitRowMap.push(this.commits.length - 1);
+      items.push(`${graph}${shortSha}  ${date}  ${truncate(author, 12)}  ${subject}`);
+    }
+    this.commitsList.setItems(items);
     if (this.commits.length) {
-      (this.commitsList as any).select(0);
+      const firstRow = this.commitRowMap.findIndex(i => i >= 0);
+      if (firstRow >= 0) {
+        (this.commitsList as any).select(firstRow);
+        this.prevSelectedRow = firstRow;
+      }
       this.previewCommitStat();
+    }
+  }
+
+  // Returns the commit at the currently-selected row, or undefined for connectors.
+  private currentCommit(): Commit | undefined {
+    const row = (this.commitsList as any).selected as number;
+    const cidx = this.commitRowMap[row];
+    return cidx >= 0 ? this.commits[cidx] : undefined;
+  }
+
+  // If the cursor landed on a connector row, jump to the next/prev commit row
+  // in the direction the user was moving.
+  private skipConnectorRow() {
+    const row = (this.commitsList as any).selected as number;
+    if (this.commitRowMap[row] >= 0) {
+      this.prevSelectedRow = row;
+      return;
+    }
+    const dir = row >= this.prevSelectedRow ? 1 : -1;
+    let r = row + dir;
+    while (r >= 0 && r < this.commitRowMap.length && this.commitRowMap[r] < 0) r += dir;
+    if (r < 0 || r >= this.commitRowMap.length) {
+      // Hit the end — try the other direction
+      r = row - dir;
+      while (r >= 0 && r < this.commitRowMap.length && this.commitRowMap[r] < 0) r -= dir;
+    }
+    if (r >= 0 && r < this.commitRowMap.length && this.commitRowMap[r] >= 0) {
+      (this.commitsList as any).select(r);
+      this.prevSelectedRow = r;
     }
   }
 
   // Cheap preview while arrow-navigating commits — stat only, no full patch.
   private previewCommitStat() {
     if (this.mode !== 'commits') return;
-    const idx = (this.commitsList as any).selected as number;
-    const c = this.commits[idx];
+    const c = this.currentCommit();
     if (!c) return;
     const r = spawnSync('git', ['show', '--stat', '--color=always', '--format=%s%n%nAuthor: %an%nDate:   %ad%n%n%b', c.sha], {
       cwd: this.root, encoding: 'utf8', maxBuffer: 5 * 1024 * 1024,
@@ -205,8 +262,7 @@ export class GitExplorer {
 
   // Enter on a commit: switch to files mode, list files touched, show first diff.
   private openCommit() {
-    const idx = (this.commitsList as any).selected as number;
-    const c = this.commits[idx];
+    const c = this.currentCommit();
     if (!c) return;
     this.selectedCommit = c;
 
@@ -304,8 +360,7 @@ export class GitExplorer {
 
   // 'o' shortcut on commits list: skip the files view, jump straight to the editor on the first touched file.
   private openTouchedFile() {
-    const idx = (this.commitsList as any).selected as number;
-    const c = this.commits[idx];
+    const c = this.currentCommit();
     if (!c) return;
     const r = spawnSync('git', ['show', '--name-only', '--pretty=format:', c.sha], {
       cwd: this.root, encoding: 'utf8',

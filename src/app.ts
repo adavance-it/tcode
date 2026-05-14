@@ -203,6 +203,8 @@ export class App {
       this.applyLayout();
       this.viewer.focus();
     };
+    // Esc inside the chat returns focus to the editor without closing the panel.
+    this.chat.onDefocus = () => this.viewer.focus();
 
     this.git.onOpenFile = (p) => {
       this.tree.revealFile(p);
@@ -249,13 +251,15 @@ export class App {
     (this.viewer.box as any).key(['C-p'], openPalette);
     this.screen.key(['C-p'], openPalette);
 
-    const openChat = () => {
+    const toggleChat = () => {
+      if (this.chat.visible) {
+        this.chat.hide();
+        return;
+      }
       // Compute chatCol now that we know the panel is being shown — keeps
       // the saved chatRatio honored even after the user resized the terminal.
-      if (!this.chat.visible) {
-        const total = (this.screen.width as number) || 80;
-        this.chatCol = chatColForRatio(this.chatRatio, total, this.splitCol);
-      }
+      const total = (this.screen.width as number) || 80;
+      this.chatCol = chatColForRatio(this.chatRatio, total, this.splitCol);
       const sel = this.viewer.selectionRange();
       if (sel && this.viewer.currentFile) {
         this.chat.show({
@@ -269,9 +273,9 @@ export class App {
         this.chat.show();
       }
     };
-    (this.tree.list as any).key(['C-a'], openChat);
-    (this.viewer.box as any).key(['C-a'], openChat);
-    this.screen.key(['C-a'], openChat);
+    (this.tree.list as any).key(['C-a'], toggleChat);
+    (this.viewer.box as any).key(['C-a'], toggleChat);
+    this.screen.key(['C-a'], toggleChat);
 
     const openGit = () => {
       if (this.anyModalOpen()) return;
