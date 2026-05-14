@@ -39,12 +39,18 @@ export class ClaudeChat {
     this.root = root;
 
     // Inline right-side panel (App controls left/width via setBounds).
+    // Initial bounds must be a real ≥2-col, ≥2-row rectangle; a width:1 box
+    // with `border: 'line'` makes blessed's coord resolver recurse forever
+    // (RangeError in _getLeft / aleft) even while hidden.
+    const sw = (screen.width as number) || 80;
+    const initialWidth = Math.max(30, Math.round(sw * 0.35));
+    const initialLeft = Math.max(0, sw - initialWidth);
     this.container = blessed.box({
       parent: screen,
       hidden: true,
       top: 0,
-      left: 0,
-      width: 1,
+      left: initialLeft,
+      width: initialWidth,
       height: '100%-1',
       border: 'line',
       label: ' Claude ',
