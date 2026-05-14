@@ -2,6 +2,7 @@ import * as blessed from 'blessed';
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
+import { Theme } from './theme';
 
 export interface FileRef {
   path: string;
@@ -19,12 +20,17 @@ export class ClaudeChat {
   private hint: blessed.Widgets.BoxElement;
   private child: ChildProcess | null = null;
   private refs: FileRef[] = [];
+  private contextLabel: blessed.Widgets.BoxElement;
+  private pendingContext?: { file: string; range: [number, number]; text: string };
+  private hasConversation = false;
+  private lastQuestion = '';
+  private lastAnswer = '';
   visible = false;
   onOpenFile: (filePath: string, line?: number) => void = () => {};
   onShow: () => void = () => {};
   onHide: () => void = () => {};
 
-  constructor(screen: blessed.Widgets.Screen, root: string) {
+  constructor(screen: blessed.Widgets.Screen, root: string, theme: Theme) {
     this.screen = screen;
     this.root = root;
 
@@ -37,7 +43,7 @@ export class ClaudeChat {
       height: '85%',
       border: 'line',
       label: ' Ask Claude about this codebase ',
-      style: { border: { fg: 'magenta' } },
+      style: { border: { fg: theme.modalBorderFg } },
       tags: false,
     });
 
@@ -45,7 +51,7 @@ export class ClaudeChat {
       parent: this.container,
       top: 0,
       left: 1,
-      content: 'Question (Enter to ask, Esc to close):',
+      content: 'Question (Enter to ask, Ctrl+N for a new conversation, Esc to close):',
       style: { fg: 'gray' },
     });
 
@@ -58,7 +64,18 @@ export class ClaudeChat {
       inputOnFocus: true,
       keys: true,
       mouse: true,
-      style: { fg: 'white', bg: 'black' },
+      style: { fg: theme.statusFg, bg: theme.dimBg },
+    });
+
+    this.contextLabel = blessed.box({
+      parent: this.container,
+      top: 2,
+      left: 1,
+      right: 1,
+      height: 1,
+      tags: false,
+      style: { fg: 'yellow' },
+      content: '',
     });
 
     blessed.text({
@@ -82,10 +99,14 @@ export class ClaudeChat {
       vi: true,
       mouse: true,
       tags: false,
-      scrollbar: { ch: ' ', track: { bg: 'gray' }, style: { bg: 'magenta' } },
+      scrollbar: {
+        ch: ' ',
+        track: { bg: theme.scrollbarTrackBg },
+        style: { bg: theme.modalBorderFg },
+      },
       style: {
-        border: { fg: 'gray' },
-        focus: { border: { fg: 'cyan' } },
+        border: { fg: theme.borderFg },
+        focus: { border: { fg: theme.borderFocusFg } },
       },
       content: '(Type a question above and press Enter)',
     });
@@ -110,9 +131,9 @@ export class ClaudeChat {
       tags: false,
       border: 'line',
       style: {
-        selected: { bg: 'magenta', fg: 'white' },
-        border: { fg: 'gray' },
-        focus: { border: { fg: 'cyan' } },
+        selected: { bg: theme.selectedBg, fg: theme.selectedFg },
+        border: { fg: theme.borderFg },
+        focus: { border: { fg: theme.borderFocusFg } },
       },
     });
 
@@ -124,7 +145,7 @@ export class ClaudeChat {
       height: 1,
       tags: false,
       style: { fg: 'gray' },
-      content: 'Tab: cycle Question / Answer / References   Esc: close   Enter on a file: open it',
+      content: 'Tab: cycle  •  Esc: close  •  Ctrl+N: new question  •  Enter on a file: open it',
     });
 
     this.input.on('submit', () => this.ask());
@@ -137,6 +158,10 @@ export class ClaudeChat {
     this.output.key(['tab'], () => this.refsBox.focus());
     this.refsBox.key(['tab'], () => this.focusInput());
 
+    this.input.key(['C-n'], () => this.newConversation());
+    this.output.key(['C-n'], () => this.newConversation());
+    this.refsBox.key(['C-n'], () => this.newConversation());
+
     this.refsBox.on('select', (_item: any, idx: number) => {
       const r = this.refs[idx];
       if (!r) return;
@@ -145,16 +170,43 @@ export class ClaudeChat {
     });
   }
 
-  show() {
+  show(opts: { context?: { file: string; range: [number, number]; text: string } } = {}) {
     this.visible = true;
     this.onShow();
     this.container.show();
     this.input.setValue('');
-    this.output.setContent('(Type a question above and press Enter)');
-    this.refsBox.setItems([]);
-    this.refs = [];
+    if (opts.context) {
+      this.pendingContext = opts.context;
+      const rel = path.relative(this.root, opts.context.file);
+      this.contextLabel.setContent(
+        ` Context: ${rel}:${opts.context.range[0]}-${opts.context.range[1]} ` +
+        `(${opts.context.range[1] - opts.context.range[0] + 1} lines) — will be sent with your question`
+      );
+    } else {
+      this.pendingContext = undefined;
+      this.contextLabel.setContent('');
+    }
+    if (!this.hasConversation) {
+      this.output.setContent('(Type a question above and press Enter)');
+      this.refsBox.setItems([]);
+      this.refs = [];
+    }
     this.focusInput();
     this.container.setFront();
+    this.screen.render();
+  }
+
+  newConversation() {
+    this.hasConversation = false;
+    this.lastQuestion = '';
+    this.lastAnswer = '';
+    this.refs = [];
+    this.pendingContext = undefined;
+    this.input.setValue('');
+    this.contextLabel.setContent('');
+    this.output.setContent('(Type a question above and press Enter)');
+    this.refsBox.setItems([]);
+    this.focusInput();
     this.screen.render();
   }
 
@@ -179,17 +231,24 @@ export class ClaudeChat {
     const q = this.input.getValue().trim();
     if (!q) return;
 
+    this.lastQuestion = q;
     this.refs = [];
     this.refsBox.setItems(['(waiting for answer...)']);
     this.output.setContent('Asking Claude...\n\n');
     this.screen.render();
 
-    const prompt =
+    let prompt =
       `You are helping a user explore a codebase from the terminal. ` +
       `Answer the user's question concisely (under 250 words). ` +
       `Whenever possible, reference specific files using paths relative to the current working directory, ` +
-      `formatted as \`path/to/file.ext:LINE\` so the user can jump to them.\n\n` +
-      `Question: ${q}`;
+      `formatted as \`path/to/file.ext:LINE\` so the user can jump to them.\n\n`;
+    if (this.pendingContext) {
+      const rel = path.relative(this.root, this.pendingContext.file);
+      prompt += `The user has selected the following lines from \`${rel}\` ` +
+        `(lines ${this.pendingContext.range[0]}-${this.pendingContext.range[1]}):\n\n` +
+        '```\n' + this.pendingContext.text + '\n```\n\n';
+    }
+    prompt += `Question: ${q}`;
 
     let stdout = '';
     let stderr = '';
@@ -228,6 +287,8 @@ export class ClaudeChat {
       if ((code !== 0 && code !== null) && !stdout) {
         this.output.setContent(`claude exited with code ${code}\n\n${stderr}`);
       }
+      this.lastAnswer = stdout;
+      this.hasConversation = true;
       this.refs = this.parseRefs(stdout);
       if (this.refs.length) {
         this.refsBox.setItems(

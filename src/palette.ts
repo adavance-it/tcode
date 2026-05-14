@@ -2,6 +2,7 @@ import * as blessed from 'blessed';
 import * as path from 'path';
 import Fuse from 'fuse.js';
 import { FileSystem } from './files';
+import { Theme } from './theme';
 
 export class CommandPalette {
   private screen: blessed.Widgets.Screen;
@@ -16,7 +17,7 @@ export class CommandPalette {
   onShow: () => void = () => {};
   onHide: () => void = () => {};
 
-  constructor(screen: blessed.Widgets.Screen, fs_: FileSystem) {
+  constructor(screen: blessed.Widgets.Screen, fs_: FileSystem, theme: Theme) {
     this.screen = screen;
     this.fs = fs_;
 
@@ -30,7 +31,7 @@ export class CommandPalette {
       border: 'line',
       label: ' Search files (type to filter, Esc to close) ',
       style: {
-        border: { fg: 'cyan' },
+        border: { fg: theme.modalBorderFg },
       },
       tags: false,
     });
@@ -44,7 +45,7 @@ export class CommandPalette {
       inputOnFocus: true,
       keys: true,
       mouse: true,
-      style: { fg: 'white' },
+      style: { fg: theme.statusFg },
     });
 
     this.list = blessed.list({
@@ -57,7 +58,7 @@ export class CommandPalette {
       mouse: true,
       tags: false,
       style: {
-        selected: { bg: 'blue', fg: 'white' },
+        selected: { bg: theme.selectedBg, fg: theme.selectedFg },
       },
     });
 

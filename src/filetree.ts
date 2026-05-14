@@ -1,6 +1,7 @@
 import * as blessed from 'blessed';
 import * as path from 'path';
 import { FileSystem, TreeNode } from './files';
+import { Theme } from './theme';
 
 interface FlatItem extends TreeNode {
   depth: number;
@@ -14,7 +15,7 @@ export class FileTree {
   items: FlatItem[] = [];
   onOpen: (filePath: string) => void = () => {};
 
-  constructor(screen: blessed.Widgets.Screen, fs_: FileSystem) {
+  constructor(screen: blessed.Widgets.Screen, fs_: FileSystem, theme: Theme, width: number) {
     this.fs = fs_;
     this.expanded.add(fs_.root);
 
@@ -23,7 +24,7 @@ export class FileTree {
       label: ` ${path.basename(fs_.root)} `,
       top: 0,
       left: 0,
-      width: '30%',
+      width,
       height: '100%-1',
       border: 'line',
       keys: true,
@@ -34,13 +35,13 @@ export class FileTree {
       alwaysScroll: true,
       scrollbar: {
         ch: ' ',
-        track: { bg: 'gray' },
-        style: { bg: 'cyan' },
+        track: { bg: theme.scrollbarTrackBg },
+        style: { bg: theme.scrollbarBg },
       },
       style: {
-        selected: { bg: 'blue', fg: 'white' },
-        focus: { border: { fg: 'cyan' } },
-        border: { fg: 'gray' },
+        selected: { bg: theme.selectedBg, fg: theme.selectedFg },
+        focus: { border: { fg: theme.borderFocusFg } },
+        border: { fg: theme.borderFg },
       },
     });
 
