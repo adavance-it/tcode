@@ -2,6 +2,7 @@ import * as blessed from 'blessed';
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
+import { highlight, supportsLanguage } from 'cli-highlight';
 import { Theme } from './theme';
 import { applyListThemeStyles } from './viewer';
 
@@ -9,6 +10,15 @@ export interface FileRef {
   path: string;
   rel: string;
   line?: number;
+}
+
+// One clickable region inside the rendered answer. Coords are content row /
+// visible column (output box has wrap:false, so visible row == content row).
+interface RefHit {
+  row: number;
+  col: number;
+  length: number;
+  ref: FileRef;
 }
 
 export class ClaudeChat {
@@ -21,6 +31,8 @@ export class ClaudeChat {
   private hint: blessed.Widgets.BoxElement;
   private child: ChildProcess | null = null;
   private refs: FileRef[] = [];
+  private refHits: RefHit[] = [];
+  private streamingText = '';
   private contextLabel: blessed.Widgets.BoxElement;
   private pendingContext?: { file: string; range: [number, number]; text: string };
   private hasConversation = false;
@@ -120,6 +132,9 @@ export class ClaudeChat {
       vi: true,
       mouse: true,
       tags: false,
+      // wrap:false so each rendered line corresponds 1:1 to a visible row,
+      // which is what the click→ref-hit mapping below relies on.
+      wrap: false,
       scrollbar: {
         ch: ' ',
         track: { bg: theme.scrollbarTrackBg },
@@ -201,6 +216,22 @@ export class ClaudeChat {
       this.onOpenFile(r.path, r.line);
     });
 
+    // Click on a styled ref inside the answer → open it in the editor.
+    this.output.on('mousedown', (data: any) => {
+      const top = (this.output.atop as number) ?? 0;
+      const left = (this.output.aleft as number) ?? 0;
+      const itop = ((this.output as any).itop as number) ?? 1;
+      const ileft = ((this.output as any).ileft as number) ?? 1;
+      const childBase = ((this.output as any).childBase as number) ?? 0;
+      const row = data.y - top - itop + childBase;
+      const col = data.x - left - ileft;
+      if (col < 0) return;
+      const hit = this.refHits.find(h =>
+        h.row === row && col >= h.col && col < h.col + h.length
+      );
+      if (hit) this.onOpenFile(hit.ref.path, hit.ref.line);
+    });
+
     // Detach from the screen until first show(). Even hidden, a mounted
     // textbox can be picked up by blessed's focus pass at startup; the
     // resulting blur loop is what was crashing tcode on macOS.
@@ -271,6 +302,8 @@ export class ClaudeChat {
 
     this.lastQuestion = q;
     this.refs = [];
+    this.refHits = [];
+    this.streamingText = '';
     this.refsBox.setItems(['(waiting for answer...)']);
     this.output.setContent('Asking Claude...\n\n');
     this.screen.render();
@@ -288,7 +321,6 @@ export class ClaudeChat {
     }
     prompt += `Question: ${q}`;
 
-    let stdout = '';
     let stderr = '';
 
     try {
@@ -304,10 +336,8 @@ export class ClaudeChat {
     }
 
     this.child.stdout?.on('data', (d: Buffer) => {
-      stdout += d.toString();
-      this.output.setContent(stdout);
-      this.output.setScrollPerc(100);
-      this.screen.render();
+      this.streamingText += d.toString();
+      this.updateAnswer();
     });
     this.child.stderr?.on('data', (d: Buffer) => {
       stderr += d.toString();
@@ -322,22 +352,185 @@ export class ClaudeChat {
     });
     this.child.on('close', (code: number | null) => {
       this.child = null;
-      if ((code !== 0 && code !== null) && !stdout) {
+      if ((code !== 0 && code !== null) && !this.streamingText) {
         this.output.setContent(`claude exited with code ${code}\n\n${stderr}`);
+        this.screen.render();
+        return;
       }
-      this.lastAnswer = stdout;
+      this.lastAnswer = this.streamingText;
       this.hasConversation = true;
-      this.refs = this.parseRefs(stdout);
-      if (this.refs.length) {
-        this.refsBox.setItems(
-          this.refs.map(r => (r.line ? `${r.rel}:${r.line}` : r.rel))
-        );
-        this.refsBox.select(0);
-      } else {
-        this.refsBox.setItems(['(no file references found in answer)']);
-      }
-      this.screen.render();
+      this.updateAnswer();
+      if (this.refs.length) this.refsBox.select(0);
     });
+  }
+
+  // Re-renders the answer area with markdown styling and ref hit-testing.
+  // Called both during streaming and on close.
+  private updateAnswer() {
+    this.refs = this.parseRefs(this.streamingText);
+    const { rendered, hits } = this.renderMarkdown(this.streamingText);
+    this.refHits = hits;
+    this.output.setContent(rendered);
+    this.output.setScrollPerc(100);
+    if (this.refs.length) {
+      this.refsBox.setItems(
+        this.refs.map(r => (r.line ? `${r.rel}:${r.line}` : r.rel))
+      );
+    } else {
+      this.refsBox.setItems(this.streamingText ? ['(no file references found in answer)'] : []);
+    }
+    this.screen.render();
+  }
+
+  // Minimal markdown → ANSI converter. Handles headings, lists, **bold**,
+  // *italic*, `inline code`, fenced code (```lang ... ```) with cli-highlight,
+  // and detects refs (path/to/file.ext[:LINE]) — refs that match parsed
+  // entries in this.refs are styled distinctly and recorded as hits.
+  private renderMarkdown(text: string): { rendered: string; hits: RefHit[] } {
+    const hits: RefHit[] = [];
+    const out: string[] = [];
+    let inCode = false;
+    let codeLang = '';
+    let codeLines: string[] = [];
+
+    const flushCode = () => {
+      let body = codeLines.join('\n');
+      if (codeLang && supportsLanguage(codeLang)) {
+        try { body = highlight(body, { language: codeLang, ignoreIllegals: true }); }
+        catch { /* fall back to plain */ }
+      }
+      for (const cl of body.split('\n')) out.push('  ' + cl);
+    };
+
+    for (const line of text.split('\n')) {
+      if (!inCode) {
+        const fence = line.match(/^```(\w*)\s*$/);
+        if (fence) {
+          inCode = true;
+          codeLang = fence[1];
+          codeLines = [];
+          out.push('\x1b[2m' + line + '\x1b[0m');
+          continue;
+        }
+      } else {
+        if (line.trim() === '```') {
+          flushCode();
+          out.push('\x1b[2m```\x1b[0m');
+          inCode = false;
+          continue;
+        }
+        codeLines.push(line);
+        continue;
+      }
+
+      const heading = line.match(/^(#{1,6})\s+(.+)$/);
+      if (heading) {
+        const lvl = heading[1].length;
+        const txt = heading[2];
+        const c = lvl === 1 ? '\x1b[1;33m' : lvl === 2 ? '\x1b[1;36m' : '\x1b[1m';
+        out.push(c + txt + '\x1b[0m');
+        continue;
+      }
+
+      const li = line.match(/^(\s*)([-*]|\d+\.)\s+(.*)$/);
+      if (li) {
+        const indent = li[1];
+        const marker = li[2];
+        const rest = li[3];
+        const bullet = (marker === '-' || marker === '*') ? '•' : marker;
+        const prefix = indent + '\x1b[33m' + bullet + '\x1b[39m ';
+        const startCol = indent.length + bullet.length + 1;
+        const sub = this.renderInline(rest, startCol, out.length);
+        out.push(prefix + sub.rendered);
+        for (const h of sub.hits) hits.push(h);
+        continue;
+      }
+
+      const sub = this.renderInline(line, 0, out.length);
+      out.push(sub.rendered);
+      for (const h of sub.hits) hits.push(h);
+    }
+
+    if (inCode) flushCode(); // unclosed fence: render what we have
+    return { rendered: out.join('\n'), hits };
+  }
+
+  private renderInline(text: string, startCol: number, row: number): { rendered: string; hits: RefHit[] } {
+    const hits: RefHit[] = [];
+    let result = '';
+    let col = startCol;
+    let i = 0;
+    const REF_RE = /^([A-Za-z0-9_./@-]+\.[A-Za-z0-9]+)(?::(\d+))?/;
+
+    while (i < text.length) {
+      // **bold**
+      if (text.startsWith('**', i)) {
+        const end = text.indexOf('**', i + 2);
+        if (end > i + 2) {
+          const inner = text.slice(i + 2, end);
+          result += '\x1b[1m' + inner + '\x1b[22m';
+          col += inner.length;
+          i = end + 2;
+          continue;
+        }
+      }
+      // `code` (and clickable ref inside backticks)
+      if (text[i] === '`') {
+        const end = text.indexOf('`', i + 1);
+        if (end > i) {
+          const inner = text.slice(i + 1, end);
+          const m = inner.match(REF_RE);
+          if (m && m[0] === inner) {
+            const ref = this.findRefMatch(m[1], m[2] ? parseInt(m[2], 10) : undefined);
+            if (ref) {
+              result += '\x1b[4;36m' + inner + '\x1b[24;39m';
+              hits.push({ row, col, length: inner.length, ref });
+              col += inner.length;
+              i = end + 1;
+              continue;
+            }
+          }
+          result += '\x1b[36m' + inner + '\x1b[39m';
+          col += inner.length;
+          i = end + 1;
+          continue;
+        }
+      }
+      // *italic* (single * not part of **)
+      if (text[i] === '*' && text[i + 1] !== '*') {
+        const end = text.indexOf('*', i + 1);
+        if (end > i + 1 && text[end + 1] !== '*') {
+          const inner = text.slice(i + 1, end);
+          result += '\x1b[3m' + inner + '\x1b[23m';
+          col += inner.length;
+          i = end + 1;
+          continue;
+        }
+      }
+      // Bare ref (not in backticks)
+      if (/[A-Za-z0-9_]/.test(text[i])) {
+        const m = text.slice(i).match(REF_RE);
+        if (m) {
+          const ref = this.findRefMatch(m[1], m[2] ? parseInt(m[2], 10) : undefined);
+          if (ref) {
+            result += '\x1b[4;36m' + m[0] + '\x1b[24;39m';
+            hits.push({ row, col, length: m[0].length, ref });
+            col += m[0].length;
+            i += m[0].length;
+            continue;
+          }
+        }
+      }
+      result += text[i];
+      col++;
+      i++;
+    }
+    return { rendered: result, hits };
+  }
+
+  private findRefMatch(rel: string, line?: number): FileRef | undefined {
+    return this.refs.find(r => r.rel === rel && (line == null || r.line === line))
+        ?? this.refs.find(r => r.rel === rel);
   }
 
   setBounds(left: number, _width: number) {
