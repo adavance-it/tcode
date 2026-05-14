@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 #
-# tercode installer.
+# tcode installer.
 #
 # One-liner:
-#   curl -fsSL https://raw.githubusercontent.com/josematiasrivero/tercode/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/adavance-it/tcode/main/install.sh | bash
 #
 # Env overrides:
-#   TERCODE_REPO   git URL to clone   (default: https://github.com/josematiasrivero/tercode.git)
-#   TERCODE_DIR    install location   (default: $HOME/dev/tercode)
-#   TERCODE_REF    branch / tag / sha (default: main)
+#   TCODE_REPO   git URL to clone   (default: https://github.com/adavance-it/tcode.git)
+#   TCODE_DIR    install location   (default: $HOME/dev/tcode)
+#   TCODE_REF    branch / tag / sha (default: main)
 #
 set -euo pipefail
 
-REPO_URL="${TERCODE_REPO:-https://github.com/josematiasrivero/tercode.git}"
-TARGET_DIR="${TERCODE_DIR:-$HOME/dev/tercode}"
-REF="${TERCODE_REF:-main}"
+REPO_URL="${TCODE_REPO:-https://github.com/adavance-it/tcode.git}"
+TARGET_DIR="${TCODE_DIR:-$HOME/dev/tcode}"
+REF="${TCODE_REF:-main}"
 
 if [ -t 1 ]; then
   C_BLUE=$'\033[34m'; C_GREEN=$'\033[32m'; C_YELLOW=$'\033[33m'; C_RED=$'\033[31m'; C_RESET=$'\033[0m'
@@ -35,7 +35,7 @@ require() {
 }
 
 main() {
-  log "tercode installer"
+  log "tcode installer"
   require git
   require node
   require npm
@@ -55,7 +55,7 @@ main() {
   else
     if [ -e "$TARGET_DIR" ]; then
       err "$TARGET_DIR exists but is not a git checkout."
-      err "Move it aside or set TERCODE_DIR to another path."
+      err "Move it aside or set TCODE_DIR to another path."
       exit 1
     fi
     log "Cloning $REPO_URL into $TARGET_DIR"
@@ -71,14 +71,14 @@ main() {
   log "Building"
   npm run --silent build
 
-  log "Linking 'tercode' on your PATH"
+  log "Linking 'tcode' on your PATH"
   npm link --silent
 
-  if command -v tercode >/dev/null 2>&1; then
-    ok "Installed at $(command -v tercode)"
-    ok "Try it:  tercode ~/some/repo"
+  if command -v tcode >/dev/null 2>&1; then
+    ok "Installed at $(command -v tcode)"
+    ok "Try it:  tcode ~/some/repo"
   else
-    warn "Built and linked, but 'tercode' is not on your PATH."
+    warn "Built and linked, but 'tcode' is not on your PATH."
     warn "Add npm's global bin to PATH and reopen your shell:"
     warn "  export PATH=\"\$(npm prefix -g)/bin:\$PATH\""
   fi

@@ -1,4 +1,4 @@
-# tercode
+# tcode
 
 A read-only, VS Code–like code explorer that lives in your terminal.
 
@@ -9,17 +9,17 @@ and inspect diffs — all without leaving the terminal.
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/josematiasrivero/tercode/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/adavance-it/tcode/main/install.sh | bash
 ```
 
-The installer clones the repo to `~/dev/tercode`, builds it, and links
-`tercode` on your `PATH`. It's idempotent: re-running updates an existing
-checkout. Override the destination with `TERCODE_DIR=/somewhere/else`.
+The installer clones the repo to `~/dev/tcode`, builds it, and links
+`tcode` on your `PATH`. It's idempotent: re-running updates an existing
+checkout. Override the destination with `TCODE_DIR=/somewhere/else`.
 
 Alternative one-liner via npm (uses the package's `prepare` script):
 
 ```bash
-npm install -g github:josematiasrivero/tercode
+npm install -g github:adavance-it/tcode
 ```
 
 Requirements: `git`, `node` ≥ 18, `npm`. Claude integration also expects the
@@ -28,11 +28,11 @@ Requirements: `git`, `node` ≥ 18, `npm`. Claude integration also expects the
 ## Usage
 
 ```bash
-tercode                    # browse the current directory
-tercode ~/dev/myrepo       # browse a specific directory
-tercode --no-wrap repo/    # start with line wrap off
-tercode --light            # force light theme (default: auto via $COLORFGBG)
-tercode --help             # full options list
+tcode                    # browse the current directory
+tcode ~/dev/myrepo       # browse a specific directory
+tcode --no-wrap repo/    # start with line wrap off
+tcode --light            # force light theme (default: auto via $COLORFGBG)
+tcode --help             # full options list
 ```
 
 ## Shortcuts
@@ -75,7 +75,7 @@ Drag the column between the panes with the mouse to resize them.
 
 ## Claude integration
 
-Press `Ctrl+A` and type a question. tercode runs `claude -p <prompt>` in the
+Press `Ctrl+A` and type a question. tcode runs `claude -p <prompt>` in the
 project directory. The answer is parsed for file references shaped like
 `path/to/file.ts:42`; those become a navigable list in the bottom of the
 modal. Pressing `Enter` on a reference opens the file at that line, and the
@@ -103,11 +103,11 @@ Auto-detected via `COLORFGBG` (used by most modern terminals). Force with
 ## Development
 
 ```bash
-git clone https://github.com/josematiasrivero/tercode.git
-cd tercode
+git clone https://github.com/adavance-it/tcode.git
+cd tcode
 npm install
 npm run build       # tsc + chmod +x dist/index.js
-npm link            # global symlink for the `tercode` binary
+npm link            # global symlink for the `tcode` binary
 npm run dev         # tsx-driven run without prebuilding
 ```
 

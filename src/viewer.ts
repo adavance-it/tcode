@@ -57,7 +57,7 @@ export class Viewer {
 
   private welcomeText = [
     '',
-    '   tercode - read-only code explorer',
+    '   tcode - read-only code explorer',
     '',
     '   Pick a file in the Explorer (Enter) to view its content.',
     '',

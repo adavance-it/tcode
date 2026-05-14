@@ -18,7 +18,7 @@ for (const a of args) {
     if (v === 'dark' || v === 'light' || v === 'auto') theme = v;
   } else if (a === '-h' || a === '--help') {
     process.stdout.write(
-      'Usage: tercode [options] [path]\n' +
+      'Usage: tcode [options] [path]\n' +
       '\n' +
       'Options:\n' +
       '  --no-wrap          long lines truncated instead of wrapped\n' +

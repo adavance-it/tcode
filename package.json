@@ -1,9 +1,9 @@
 {
-  "name": "tercode",
+  "name": "tcode",
   "version": "0.1.0",
   "description": "Read-only VS Code-like terminal explorer with Claude integration",
   "bin": {
-    "tercode": "dist/index.js"
+    "tcode": "dist/index.js"
   },
   "scripts": {
     "build": "tsc && chmod +x dist/index.js",

@@ -33,7 +33,7 @@ export class App {
     this.theme = detectTheme(opts.theme ?? 'auto');
     this.screen = blessed.screen({
       smartCSR: true,
-      title: 'tercode',
+      title: 'tcode',
       fullUnicode: true,
       autoPadding: true,
     });
@@ -90,7 +90,7 @@ export class App {
     const themeTag = `[${this.theme.mode}]`;
     const sel = this.viewer.selectionRange();
     const selTag = sel ? `[sel ${sel[0]}-${sel[1]}]` : '';
-    const left = filePath ? ` ${filePath} ${selTag}` : ' tercode ';
+    const left = filePath ? ` ${filePath} ${selTag}` : ' tcode ';
     const right = ` ${themeTag} ${wrapTag} | Tab | ^P search | ^A claude | ^G git | w wrap | q quit `;
     const total = (this.screen.width as number) || 80;
     const pad = Math.max(1, total - left.length - right.length);
