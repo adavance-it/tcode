@@ -38,20 +38,19 @@ export class ClaudeChat {
     this.screen = screen;
     this.root = root;
 
-    // Inline right-side panel (App controls left/width via setBounds).
-    // Initial bounds must be a real ≥2-col, ≥2-row rectangle; a width:1 box
-    // with `border: 'line'` makes blessed's coord resolver recurse forever
-    // (RangeError in _getLeft / aleft) even while hidden.
+    // Inline right-side panel. Anchor with `right: 0` (not `width`) and use
+    // numeric `bottom` (not a percent expression) so blessed's coord resolver
+    // never has to evaluate string positions on the container — that path is
+    // what causes RangeError in _getLeft/aleft when the panel goes visible.
     const sw = (screen.width as number) || 80;
-    const initialWidth = Math.max(30, Math.round(sw * 0.35));
-    const initialLeft = Math.max(0, sw - initialWidth);
+    const initialLeft = Math.max(0, sw - Math.max(30, Math.round(sw * 0.35)));
     this.container = blessed.box({
       parent: screen,
       hidden: true,
       top: 0,
       left: initialLeft,
-      width: initialWidth,
-      height: '100%-1',
+      right: 0,
+      bottom: 1,
       border: 'line',
       label: ' Claude ',
       style: {
@@ -61,10 +60,14 @@ export class ClaudeChat {
       tags: false,
     });
 
+    // All children use only numeric positions (no `%` expressions). blessed's
+    // percent parsing inside a dynamically-resized box is the most likely
+    // source of the recursion users have hit on macOS terminals.
     blessed.text({
       parent: this.container,
       top: 0,
       left: 1,
+      height: 1,
       content: 'Question:',
       style: { fg: 'gray' },
     });
@@ -96,6 +99,7 @@ export class ClaudeChat {
       parent: this.container,
       top: 3,
       left: 1,
+      height: 1,
       content: 'Answer:',
       style: { fg: 'gray' },
     });
@@ -105,7 +109,7 @@ export class ClaudeChat {
       top: 4,
       left: 1,
       right: 1,
-      height: '55%',
+      bottom: 11,
       border: 'line',
       scrollable: true,
       alwaysScroll: true,
@@ -127,18 +131,19 @@ export class ClaudeChat {
 
     blessed.text({
       parent: this.container,
-      top: '70%',
+      bottom: 10,
       left: 1,
+      height: 1,
       content: 'Refs:',
       style: { fg: 'gray' },
     });
 
     this.refsBox = blessed.list({
       parent: this.container,
-      top: '70%+1',
+      bottom: 1,
       left: 1,
       right: 1,
-      bottom: 2,
+      height: 9,
       keys: true,
       vi: true,
       mouse: true,
@@ -317,9 +322,10 @@ export class ClaudeChat {
     });
   }
 
-  setBounds(left: number, width: number) {
+  setBounds(left: number, _width: number) {
+    // Container is anchored with right:0; width derives implicitly. We only
+    // need to move its left edge.
     (this.container as any).left = left;
-    (this.container as any).width = width;
   }
 
   applyTheme(theme: Theme) {
