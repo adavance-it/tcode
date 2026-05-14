@@ -13,6 +13,8 @@ export class CommandPalette {
   private fuse: Fuse<string> | null = null;
   visible = false;
   onSelect: (filePath: string) => void = () => {};
+  onShow: () => void = () => {};
+  onHide: () => void = () => {};
 
   constructor(screen: blessed.Widgets.Screen, fs_: FileSystem) {
     this.screen = screen;
@@ -112,12 +114,13 @@ export class CommandPalette {
   show() {
     this.ensureIndex();
     this.visible = true;
+    this.onShow();
     this.container.show();
-    this.container.setFront();
     this.input.setValue('');
     this.refresh();
     this.input.focus();
     (this.input as any).readInput();
+    this.container.setFront();
     this.screen.render();
   }
 
@@ -126,6 +129,7 @@ export class CommandPalette {
     this.visible = false;
     (this.input as any).cancel?.();
     this.container.hide();
+    this.onHide();
     this.screen.render();
   }
 

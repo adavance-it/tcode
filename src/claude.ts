@@ -21,6 +21,8 @@ export class ClaudeChat {
   private refs: FileRef[] = [];
   visible = false;
   onOpenFile: (filePath: string, line?: number) => void = () => {};
+  onShow: () => void = () => {};
+  onHide: () => void = () => {};
 
   constructor(screen: blessed.Widgets.Screen, root: string) {
     this.screen = screen;
@@ -145,13 +147,14 @@ export class ClaudeChat {
 
   show() {
     this.visible = true;
+    this.onShow();
     this.container.show();
-    this.container.setFront();
     this.input.setValue('');
     this.output.setContent('(Type a question above and press Enter)');
     this.refsBox.setItems([]);
     this.refs = [];
     this.focusInput();
+    this.container.setFront();
     this.screen.render();
   }
 
@@ -168,6 +171,7 @@ export class ClaudeChat {
     }
     (this.input as any).cancel?.();
     this.container.hide();
+    this.onHide();
     this.screen.render();
   }
 

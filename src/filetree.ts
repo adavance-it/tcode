@@ -56,34 +56,42 @@ export class FileTree {
     this.rebuild();
   }
 
-  // The user wants the viewport to stay still during mouse activity:
-  // scroll only when keyboard navigation pushes the selection past the
-  // visible window. blessed.list's default mouse behavior (wheel moves the
-  // cursor; trackpad scroll fires wheel events) is the opposite of that.
+  // blessed.list's default wheel handler moves the cursor (and thus scrolls).
+  // We want wheel to scroll the viewport while keyboard nav drives the cursor.
   private disableMouseScroll() {
     const list: any = this.list;
     for (const ev of ['wheelup', 'wheeldown', 'element wheelup', 'element wheeldown']) {
       list.removeAllListeners(ev);
-      // swallow them so blessed's screen-level handlers don't re-add behavior
-      list.on(ev, () => {});
     }
+    this.list.on('element wheelup', () => this.scrollViewport(-3));
+    this.list.on('element wheeldown', () => this.scrollViewport(3));
 
-    // Belt-and-suspenders: if a click ever shifts childBase, restore it on
-    // the next tick. Clicks on a visible item shouldn't scroll, but trackpads
-    // sometimes deliver scroll deltas alongside clicks.
+    // Restore childBase if a click ever shifts it (clicks on visible items
+    // shouldn't scroll, but trackpads can deliver stray scroll deltas).
     let savedBase = 0;
     this.list.on('mouse', () => {
       savedBase = list.childBase ?? 0;
     });
-    this.list.on('element click', () => {
-      process.nextTick(() => {
-        if (list.childBase !== savedBase) {
-          list.childBase = savedBase;
-          list.childOffset = Math.max(0, (list.selected ?? 0) - savedBase);
-          this.list.screen.render();
-        }
-      });
-    });
+  }
+
+  private visibleRows(): number {
+    const h = (this.list.height as number) || 20;
+    return Math.max(1, h - 2); // top/bottom borders
+  }
+
+  private scrollViewport(delta: number) {
+    const list: any = this.list;
+    const visible = this.visibleRows();
+    const max = Math.max(0, this.items.length - visible);
+    const oldBase = list.childBase ?? 0;
+    const newBase = Math.max(0, Math.min(max, oldBase + delta));
+    if (newBase === oldBase) return;
+    list.childBase = newBase;
+    // Keep selection at its absolute index. childOffset is the on-screen row
+    // of the cursor; if the selection scrolls offscreen, the cursor highlight
+    // disappears until the user scrolls back or moves with the keyboard.
+    list.childOffset = (list.selected ?? 0) - newBase;
+    this.list.screen.render();
   }
 
   private rebuild() {

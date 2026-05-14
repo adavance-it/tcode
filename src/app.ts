@@ -1,9 +1,11 @@
 import * as blessed from 'blessed';
 import { FileSystem } from './files';
 import { FileTree } from './filetree';
-import { Viewer } from './viewer';
+import { Viewer, ViewerOpts } from './viewer';
 import { CommandPalette } from './palette';
 import { ClaudeChat } from './claude';
+
+export interface AppOpts extends ViewerOpts {}
 
 export class App {
   private fs: FileSystem;
@@ -13,8 +15,9 @@ export class App {
   private palette: CommandPalette;
   private chat: ClaudeChat;
   private status: blessed.Widgets.BoxElement;
+  private dim: blessed.Widgets.BoxElement;
 
-  constructor(root: string) {
+  constructor(root: string, opts: AppOpts = {}) {
     this.fs = new FileSystem(root);
     this.screen = blessed.screen({
       smartCSR: true,
@@ -24,7 +27,7 @@ export class App {
     });
 
     this.tree = new FileTree(this.screen, this.fs);
-    this.viewer = new Viewer(this.screen);
+    this.viewer = new Viewer(this.screen, opts);
     this.palette = new CommandPalette(this.screen, this.fs);
     this.chat = new ClaudeChat(this.screen, this.fs.root);
 
@@ -38,17 +41,41 @@ export class App {
       style: { bg: 'blue', fg: 'white' },
       content: '',
     });
-    this.refreshStatus(null);
 
+    // Dim layer used to darken the rest of the screen while a modal is open.
+    // Sits above tree/viewer/status, below the modal (modals call setFront on
+    // show, which lifts them above this overlay).
+    this.dim = blessed.box({
+      parent: this.screen,
+      hidden: true,
+      top: 0,
+      left: 0,
+      width: '100%',
+      height: '100%',
+      style: { bg: 'black', fg: '#3a3a3a' },
+      tags: false,
+    });
+
+    this.refreshStatus(null);
     this.wire();
   }
 
   private refreshStatus(filePath: string | null) {
+    const wrapTag = this.viewer.wrap ? '[wrap]' : '[no-wrap]';
     const left = filePath ? ` ${filePath} ` : ' tercode ';
-    const right = ' Tab switch | Ctrl+P search | Ctrl+A claude | q quit ';
+    const right = ` ${wrapTag} | Tab switch | Ctrl+P search | Ctrl+A claude | w wrap | q quit `;
     const total = (this.screen.width as number) || 80;
     const pad = Math.max(1, total - left.length - right.length);
     this.status.setContent(left + ' '.repeat(pad) + right);
+  }
+
+  private dimOn() {
+    this.dim.show();
+    this.dim.setFront();
+  }
+
+  private dimOff() {
+    this.dim.hide();
   }
 
   private wire() {
@@ -60,16 +87,24 @@ export class App {
       this.refreshStatus(p);
       this.screen.render();
     };
+    this.viewer.onWrapChange = () => {
+      this.refreshStatus(this.viewer.currentFile);
+      this.screen.render();
+    };
     this.palette.onSelect = (p) => {
       this.tree.revealFile(p);
       this.viewer.load(p);
       this.viewer.focus();
     };
+    this.palette.onShow = () => this.dimOn();
+    this.palette.onHide = () => this.dimOff();
     this.chat.onOpenFile = (p, line) => {
       this.tree.revealFile(p);
       this.viewer.load(p, line);
       this.viewer.focus();
     };
+    this.chat.onShow = () => this.dimOn();
+    this.chat.onHide = () => this.dimOff();
 
     // global exit (only when no modal active)
     this.screen.key(['C-c'], () => this.quit());

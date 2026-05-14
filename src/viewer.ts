@@ -36,10 +36,16 @@ function isLikelyBinary(buf: Buffer): boolean {
   return false;
 }
 
+export interface ViewerOpts {
+  wrap?: boolean;
+}
+
 export class Viewer {
   box: blessed.Widgets.BoxElement;
   currentFile: string | null = null;
+  wrap: boolean;
   onFileChange: (filePath: string | null) => void = () => {};
+  onWrapChange: (wrap: boolean) => void = () => {};
 
   private welcomeText = [
     '',
@@ -54,11 +60,13 @@ export class Viewer {
     '     Ctrl+A        ask Claude about this codebase',
     '     j/k or ↑/↓    move',
     '     g / G         top / bottom of file',
+    '     w             toggle line wrap',
     '     q / Ctrl+C    quit',
     '',
   ].join('\n');
 
-  constructor(screen: blessed.Widgets.Screen) {
+  constructor(screen: blessed.Widgets.Screen, opts: ViewerOpts = {}) {
+    this.wrap = opts.wrap ?? true;
     this.box = blessed.box({
       parent: screen,
       label: ' Editor ',
@@ -73,6 +81,7 @@ export class Viewer {
       scrollable: true,
       alwaysScroll: true,
       tags: false,
+      wrap: this.wrap,
       scrollbar: {
         ch: ' ',
         track: { bg: 'gray' },
@@ -103,6 +112,15 @@ export class Viewer {
       this.box.scroll(Math.floor(h / 2));
       this.box.screen.render();
     });
+    this.box.key(['w'], () => this.toggleWrap());
+  }
+
+  toggleWrap() {
+    this.wrap = !this.wrap;
+    (this.box as any).wrap = this.wrap;
+    if (this.currentFile) this.load(this.currentFile);
+    else this.box.screen.render();
+    this.onWrapChange(this.wrap);
   }
 
   load(filePath: string, line?: number) {
