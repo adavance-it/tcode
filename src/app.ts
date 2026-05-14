@@ -25,9 +25,13 @@ export class App {
   private status: blessed.Widgets.BoxElement;
   private dim: blessed.Widgets.BoxElement;
   private splitter: blessed.Widgets.BoxElement;
+  private chatSplitter: blessed.Widgets.BoxElement;
   private splitCol: number;
   private splitRatio: number;
+  private chatCol: number;
+  private chatRatio: number;
   private draggingSplit = false;
+  private draggingChatSplit = false;
 
   constructor(root: string, opts: AppOpts = {}) {
     this.fs = new FileSystem(root);
@@ -41,7 +45,9 @@ export class App {
 
     const w = (this.screen.width as number) || 80;
     this.splitRatio = 0.3;
+    this.chatRatio = 0.35;
     this.splitCol = colForRatio(this.splitRatio, w);
+    this.chatCol = w; // chat hidden initially → viewer extends to right edge
 
     this.tree = new FileTree(this.screen, this.fs, this.theme, this.splitCol);
     this.viewer = new Viewer(this.screen, this.theme, opts);
@@ -83,6 +89,19 @@ export class App {
       style: { bg: this.theme.borderFg },
     });
 
+    // 1-col mouse target between viewer and chat panel; hidden until chat is shown.
+    this.chatSplitter = blessed.box({
+      parent: this.screen,
+      hidden: true,
+      top: 0,
+      left: this.chatCol,
+      width: 1,
+      height: '100%-1',
+      mouse: true,
+      tags: false,
+      style: { bg: this.theme.borderFg },
+    });
+
     this.refreshStatus(null);
     this.wire();
   }
@@ -102,17 +121,48 @@ export class App {
   private dimOn() { this.dim.show(); this.dim.setFront(); }
   private dimOff() { this.dim.hide(); }
 
+  private viewerRight(): number {
+    return this.chat.visible ? this.chatCol : ((this.screen.width as number) || 80);
+  }
+
   private setSplitCol(col: number, opts: { updateRatio?: boolean } = {}) {
     const total = (this.screen.width as number) || 80;
-    col = clampSplit(col, total);
+    const right = this.viewerRight();
+    col = clampSplit(col, right);
     const changed = col !== this.splitCol;
     if (opts.updateRatio !== false && total > 0) this.splitRatio = col / total;
     if (!changed) return;
     this.splitCol = col;
-    (this.tree.list as any).width = col;
-    (this.viewer.box as any).left = col;
-    (this.viewer.box as any).width = total - col;
-    (this.splitter as any).left = col;
+    this.applyLayout();
+  }
+
+  private setChatCol(col: number, opts: { updateRatio?: boolean } = {}) {
+    const total = (this.screen.width as number) || 80;
+    // chat must leave at least MIN_PANE for the viewer to its left
+    const minChat = this.splitCol + MIN_PANE;
+    const maxChat = total - MIN_PANE;
+    col = Math.min(Math.max(col, minChat), Math.max(minChat, maxChat));
+    const changed = col !== this.chatCol;
+    if (opts.updateRatio !== false && total > 0) this.chatRatio = (total - col) / total;
+    if (!changed) return;
+    this.chatCol = col;
+    this.applyLayout();
+  }
+
+  private applyLayout() {
+    const total = (this.screen.width as number) || 80;
+    const right = this.viewerRight();
+    (this.tree.list as any).width = this.splitCol;
+    (this.viewer.box as any).left = this.splitCol;
+    (this.viewer.box as any).width = right - this.splitCol;
+    (this.splitter as any).left = this.splitCol;
+    if (this.chat.visible) {
+      this.chat.setBounds(this.chatCol, total - this.chatCol);
+      (this.chatSplitter as any).left = this.chatCol;
+      this.chatSplitter.show();
+    } else {
+      this.chatSplitter.hide();
+    }
     this.screen.render();
   }
 
@@ -147,8 +197,12 @@ export class App {
       this.viewer.load(p, line);
       this.viewer.focus();
     };
-    this.chat.onShow = () => this.dimOn();
-    this.chat.onHide = () => this.dimOff();
+    // Chat is an inline pane now — no dim overlay; show/hide drive layout instead.
+    this.chat.onShow = () => this.applyLayout();
+    this.chat.onHide = () => {
+      this.applyLayout();
+      this.viewer.focus();
+    };
 
     this.git.onOpenFile = (p) => {
       this.tree.revealFile(p);
@@ -160,10 +214,16 @@ export class App {
 
     // splitter: click+drag to resize
     this.splitter.on('mousedown', () => { this.draggingSplit = true; });
+    this.chatSplitter.on('mousedown', () => { this.draggingChatSplit = true; });
     this.screen.on('mouse', (data: any) => {
-      if (!this.draggingSplit) return;
-      if (data.action === 'mouseup') { this.draggingSplit = false; return; }
-      if (typeof data.x === 'number') this.setSplitCol(data.x);
+      if (data.action === 'mouseup') {
+        this.draggingSplit = false;
+        this.draggingChatSplit = false;
+        return;
+      }
+      if (typeof data.x !== 'number') return;
+      if (this.draggingSplit) this.setSplitCol(data.x);
+      else if (this.draggingChatSplit) this.setChatCol(data.x);
     });
 
     // global keys
@@ -190,7 +250,12 @@ export class App {
     this.screen.key(['C-p'], openPalette);
 
     const openChat = () => {
-      if (this.anyModalOpen()) return;
+      // Compute chatCol now that we know the panel is being shown — keeps
+      // the saved chatRatio honored even after the user resized the terminal.
+      if (!this.chat.visible) {
+        const total = (this.screen.width as number) || 80;
+        this.chatCol = chatColForRatio(this.chatRatio, total, this.splitCol);
+      }
       const sel = this.viewer.selectionRange();
       if (sel && this.viewer.currentFile) {
         this.chat.show({
@@ -223,14 +288,20 @@ export class App {
 
     this.screen.on('resize', () => {
       const total = (this.screen.width as number) || 80;
-      this.setSplitCol(colForRatio(this.splitRatio, total), { updateRatio: false });
+      this.splitCol = colForRatio(this.splitRatio, total);
+      if (this.chat.visible) {
+        this.chatCol = chatColForRatio(this.chatRatio, total, this.splitCol);
+      } else {
+        this.chatCol = total;
+      }
+      this.applyLayout();
       this.refreshStatus(this.viewer.currentFile);
-      this.screen.render();
     });
   }
 
   private anyModalOpen(): boolean {
-    return this.palette.visible || this.chat.visible || this.git.visible;
+    // chat is no longer modal — it's a side pane that coexists with the rest.
+    return this.palette.visible || this.git.visible;
   }
 
   private setTheme(theme: Theme) {
@@ -247,6 +318,9 @@ export class App {
     const sp: any = this.splitter;
     sp.style = sp.style ?? {};
     sp.style.bg = theme.borderFg;
+    const csp: any = this.chatSplitter;
+    csp.style = csp.style ?? {};
+    csp.style.bg = theme.borderFg;
     const dm: any = this.dim;
     dm.style = dm.style ?? {};
     dm.style.bg = theme.dimBg;
@@ -276,4 +350,11 @@ function clampSplit(col: number, total: number): number {
 
 function colForRatio(ratio: number, total: number): number {
   return clampSplit(Math.round(ratio * total), total);
+}
+
+function chatColForRatio(ratio: number, total: number, splitCol: number): number {
+  const minChat = splitCol + MIN_PANE;
+  const maxChat = total - MIN_PANE;
+  const target = Math.round(total * (1 - ratio));
+  return Math.min(Math.max(target, minChat), Math.max(minChat, maxChat));
 }

@@ -66,7 +66,7 @@ export class Viewer {
     '     Tab            switch between Explorer and Editor',
     '     Enter          open file / toggle directory',
     '     Ctrl+P         fuzzy file search',
-    '     Ctrl+A         ask Claude about this codebase',
+    '     Ctrl+A         toggle Claude side panel (drag splitter to resize)',
     '     Ctrl+G         git explorer (commits + files + diff)',
     '     j/k or ↑/↓     move',
     '     g / G          top / bottom of file',

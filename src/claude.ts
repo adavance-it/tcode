@@ -35,16 +35,20 @@ export class ClaudeChat {
     this.screen = screen;
     this.root = root;
 
+    // Inline right-side panel (App controls left/width via setBounds).
     this.container = blessed.box({
       parent: screen,
       hidden: true,
-      top: 'center',
-      left: 'center',
-      width: '85%',
-      height: '85%',
+      top: 0,
+      left: 0,
+      width: 1,
+      height: '100%-1',
       border: 'line',
-      label: ' Ask Claude about this codebase ',
-      style: { border: { fg: theme.modalBorderFg } },
+      label: ' Claude ',
+      style: {
+        border: { fg: theme.borderFg },
+        focus: { border: { fg: theme.borderFocusFg } },
+      },
       tags: false,
     });
 
@@ -52,7 +56,7 @@ export class ClaudeChat {
       parent: this.container,
       top: 0,
       left: 1,
-      content: 'Question (Enter to ask, Ctrl+N for a new conversation, Esc to close):',
+      content: 'Question:',
       style: { fg: 'gray' },
     });
 
@@ -103,7 +107,7 @@ export class ClaudeChat {
       scrollbar: {
         ch: ' ',
         track: { bg: theme.scrollbarTrackBg },
-        style: { bg: theme.modalBorderFg },
+        style: { bg: theme.scrollbarBg },
       },
       style: {
         border: { fg: theme.borderFg },
@@ -116,7 +120,7 @@ export class ClaudeChat {
       parent: this.container,
       top: '70%',
       left: 1,
-      content: 'Referenced files (Tab to focus, Enter to open):',
+      content: 'Refs:',
       style: { fg: 'gray' },
     });
 
@@ -146,7 +150,7 @@ export class ClaudeChat {
       height: 1,
       tags: false,
       style: { fg: 'gray' },
-      content: 'Tab: cycle  •  Esc: close  •  Ctrl+N: new question  •  Enter on a file: open it',
+      content: '^N new  •  Tab cycle  •  Esc hide',
     });
 
     this.input.on('submit', () => this.ask());
@@ -303,12 +307,20 @@ export class ClaudeChat {
     });
   }
 
+  setBounds(left: number, width: number) {
+    (this.container as any).left = left;
+    (this.container as any).width = width;
+  }
+
   applyTheme(theme: Theme) {
     const c: any = this.container;
-    if (c.style?.border) c.style.border.fg = theme.modalBorderFg;
+    if (c.style?.border) c.style.border.fg = theme.borderFg;
+    if (c.style?.focus?.border) c.style.focus.border.fg = theme.borderFocusFg;
     const o: any = this.output;
     if (o.style?.border) o.style.border.fg = theme.borderFg;
     if (o.style?.focus?.border) o.style.focus.border.fg = theme.borderFocusFg;
+    if (o.scrollbar?.style) o.scrollbar.style.bg = theme.scrollbarBg;
+    if (o.scrollbar?.track) o.scrollbar.track.bg = theme.scrollbarTrackBg;
     applyListThemeStyles(this.refsBox as any, theme);
     this.screen.render();
   }
