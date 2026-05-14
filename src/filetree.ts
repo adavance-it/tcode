@@ -52,7 +52,38 @@ export class FileTree {
       this.handleEnter(idx);
     });
 
+    this.disableMouseScroll();
     this.rebuild();
+  }
+
+  // The user wants the viewport to stay still during mouse activity:
+  // scroll only when keyboard navigation pushes the selection past the
+  // visible window. blessed.list's default mouse behavior (wheel moves the
+  // cursor; trackpad scroll fires wheel events) is the opposite of that.
+  private disableMouseScroll() {
+    const list: any = this.list;
+    for (const ev of ['wheelup', 'wheeldown', 'element wheelup', 'element wheeldown']) {
+      list.removeAllListeners(ev);
+      // swallow them so blessed's screen-level handlers don't re-add behavior
+      list.on(ev, () => {});
+    }
+
+    // Belt-and-suspenders: if a click ever shifts childBase, restore it on
+    // the next tick. Clicks on a visible item shouldn't scroll, but trackpads
+    // sometimes deliver scroll deltas alongside clicks.
+    let savedBase = 0;
+    this.list.on('mouse', () => {
+      savedBase = list.childBase ?? 0;
+    });
+    this.list.on('element click', () => {
+      process.nextTick(() => {
+        if (list.childBase !== savedBase) {
+          list.childBase = savedBase;
+          list.childOffset = Math.max(0, (list.selected ?? 0) - savedBase);
+          this.list.screen.render();
+        }
+      });
+    });
   }
 
   private rebuild() {
