@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { Theme } from './theme';
+import { applyListThemeStyles } from './viewer';
 
 export interface FileRef {
   path: string;
@@ -300,6 +301,16 @@ export class ClaudeChat {
       }
       this.screen.render();
     });
+  }
+
+  applyTheme(theme: Theme) {
+    const c: any = this.container;
+    if (c.style?.border) c.style.border.fg = theme.modalBorderFg;
+    const o: any = this.output;
+    if (o.style?.border) o.style.border.fg = theme.borderFg;
+    if (o.style?.focus?.border) o.style.focus.border.fg = theme.borderFocusFg;
+    applyListThemeStyles(this.refsBox as any, theme);
+    this.screen.render();
   }
 
   private parseRefs(text: string): FileRef[] {

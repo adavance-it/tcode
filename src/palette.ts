@@ -3,6 +3,7 @@ import * as path from 'path';
 import Fuse from 'fuse.js';
 import { FileSystem } from './files';
 import { Theme } from './theme';
+import { applyListThemeStyles } from './viewer';
 
 export class CommandPalette {
   private screen: blessed.Widgets.Screen;
@@ -144,6 +145,13 @@ export class CommandPalette {
     }
     this.list.setItems(results);
     if (results.length) this.list.select(0);
+    this.screen.render();
+  }
+
+  applyTheme(theme: Theme) {
+    const c: any = this.container;
+    if (c.style?.border) c.style.border.fg = theme.modalBorderFg;
+    applyListThemeStyles(this.list as any, theme);
     this.screen.render();
   }
 

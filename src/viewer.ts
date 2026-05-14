@@ -2,7 +2,7 @@ import * as blessed from 'blessed';
 import * as fs from 'fs';
 import * as path from 'path';
 import { highlight, supportsLanguage } from 'cli-highlight';
-import { Theme, bgAnsi } from './theme';
+import { Theme, bgAnsi, fgAnsi } from './theme';
 
 const EXT_TO_LANG: Record<string, string> = {
   '.ts': 'typescript', '.tsx': 'typescript',
@@ -51,6 +51,7 @@ export class Viewer {
   private rawLines: string[] = [];
   selectionAnchor?: number;
   selectionActive?: number;
+  private draggingSel = false;
   onFileChange: (filePath: string | null) => void = () => {};
   onWrapChange: (wrap: boolean) => void = () => {};
   onSelectionChange: () => void = () => {};
@@ -62,14 +63,17 @@ export class Viewer {
     '   Pick a file in the Explorer (Enter) to view its content.',
     '',
     '   Shortcuts:',
-    '     Tab           switch between Explorer and Editor',
-    '     Enter         open file / toggle directory',
-    '     Ctrl+P        fuzzy file search',
-    '     Ctrl+A        ask Claude about this codebase',
-    '     j/k or ↑/↓    move',
-    '     g / G         top / bottom of file',
-    '     w             toggle line wrap',
-    '     q / Ctrl+C    quit',
+    '     Tab            switch between Explorer and Editor',
+    '     Enter          open file / toggle directory',
+    '     Ctrl+P         fuzzy file search',
+    '     Ctrl+A         ask Claude about this codebase',
+    '     Ctrl+G         git explorer (commits + files + diff)',
+    '     j/k or ↑/↓     move',
+    '     g / G          top / bottom of file',
+    '     Shift+↑/↓      extend line selection (or drag with mouse)',
+    '     w              toggle line wrap',
+    '     d              toggle dark / light theme',
+    '     q / Ctrl+C     quit',
     '',
   ].join('\n');
 
@@ -128,7 +132,7 @@ export class Viewer {
     this.box.key(['S-up', 'S-k'], () => this.extendSelection(-1));
     this.box.key(['escape'], () => this.clearSelection());
 
-    // mouse: click sets anchor, shift+click extends
+    // mouse: click sets anchor, shift+click extends, drag extends to drop point
     this.box.on('mousedown', (data: any) => {
       const line = this.lineFromY(data.y);
       if (line == null) return;
@@ -139,9 +143,23 @@ export class Viewer {
         this.selectionAnchor = line;
         this.selectionActive = line;
       }
+      this.draggingSel = true;
       this.rerender();
       this.onSelectionChange();
     });
+
+    this.box.on('mousemove', (data: any) => {
+      if (!this.draggingSel) return;
+      const line = this.lineFromY(data.y);
+      if (line == null || line === this.selectionActive) return;
+      this.selectionActive = line;
+      this.rerender();
+      this.onSelectionChange();
+    });
+
+    this.box.on('mouseup', () => { this.draggingSel = false; });
+    // mouseup outside the box fires on the screen; cover that too
+    screen.on('mouseup', () => { this.draggingSel = false; });
   }
 
   hasSelection(): boolean {
@@ -274,14 +292,17 @@ export class Viewer {
     const width = String(lines.length).length;
     const hlBg = hl ? bgAnsi(this.theme.highlightLineBg) : '';
     const selRange = this.selectionRange();
-    const selBg = selRange ? bgAnsi(this.theme.selectedBg) : '';
+    const selBg = selRange ? bgAnsi(this.theme.viewerSelectionBg) : '';
+    const selNumFg = selRange ? fgAnsi(this.theme.viewerSelectionFg) : '';
     return lines
       .map((l, i) => {
         const num = String(i + 1).padStart(width, ' ');
         const lineNum = i + 1;
         if (selRange && lineNum >= selRange[0] && lineNum <= selRange[1]) {
-          // cli-highlight only flips fg, so our bg persists through inner codes
-          return `${selBg}\x1b[97m  ${num}\x1b[39m  ${l}\x1b[0m`;
+          // Pastel bg persists through cli-highlight's fg toggles (39 only resets fg).
+          // We color only the gutter; \x1b[39m before content lets syntax tokens keep
+          // their original fg over the selection bg.
+          return `${selBg}${selNumFg}  ${num}\x1b[39m  ${l}\x1b[0m`;
         }
         if (hl === lineNum) {
           return `${hlBg}\x1b[33m▸ ${num}\x1b[39m  ${l}\x1b[0m`;
@@ -301,4 +322,42 @@ export class Viewer {
   focus() {
     this.box.focus();
   }
+
+  applyTheme(theme: Theme) {
+    this.theme = theme;
+    applyBorderStyle(this.box, theme);
+    applyScrollbarStyle(this.box, theme);
+    this.rerender();
+  }
+}
+
+function applyBorderStyle(widget: any, theme: Theme) {
+  const s = widget.style ?? (widget.style = {});
+  s.border = s.border ?? {};
+  s.border.fg = theme.borderFg;
+  s.focus = s.focus ?? {};
+  s.focus.border = s.focus.border ?? {};
+  s.focus.border.fg = theme.borderFocusFg;
+}
+
+function applyScrollbarStyle(widget: any, theme: Theme) {
+  if (widget.scrollbar) {
+    widget.scrollbar.style = widget.scrollbar.style ?? {};
+    widget.scrollbar.style.bg = theme.scrollbarBg;
+    widget.scrollbar.track = widget.scrollbar.track ?? {};
+    widget.scrollbar.track.bg = theme.scrollbarTrackBg;
+  }
+  if (widget.style?.scrollbar) {
+    widget.style.scrollbar.bg = theme.scrollbarBg;
+    if (widget.style.scrollbar.track) widget.style.scrollbar.track.bg = theme.scrollbarTrackBg;
+  }
+}
+
+export function applyListThemeStyles(widget: any, theme: Theme) {
+  applyBorderStyle(widget, theme);
+  applyScrollbarStyle(widget, theme);
+  const s = widget.style ?? (widget.style = {});
+  s.selected = s.selected ?? {};
+  s.selected.bg = theme.selectedBg;
+  s.selected.fg = theme.selectedFg;
 }

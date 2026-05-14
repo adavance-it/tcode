@@ -5,7 +5,7 @@ import { Viewer, ViewerOpts } from './viewer';
 import { CommandPalette } from './palette';
 import { ClaudeChat } from './claude';
 import { GitExplorer } from './git';
-import { Theme, ThemeChoice, detectTheme } from './theme';
+import { Theme, ThemeChoice, detectTheme, DARK, LIGHT } from './theme';
 
 export interface AppOpts extends ViewerOpts {
   theme?: ThemeChoice;
@@ -26,6 +26,7 @@ export class App {
   private dim: blessed.Widgets.BoxElement;
   private splitter: blessed.Widgets.BoxElement;
   private splitCol: number;
+  private splitRatio: number;
   private draggingSplit = false;
 
   constructor(root: string, opts: AppOpts = {}) {
@@ -39,7 +40,8 @@ export class App {
     });
 
     const w = (this.screen.width as number) || 80;
-    this.splitCol = clamp(Math.floor(w * 0.3), MIN_PANE, w - MIN_PANE);
+    this.splitRatio = 0.3;
+    this.splitCol = colForRatio(this.splitRatio, w);
 
     this.tree = new FileTree(this.screen, this.fs, this.theme, this.splitCol);
     this.viewer = new Viewer(this.screen, this.theme, opts);
@@ -91,7 +93,7 @@ export class App {
     const sel = this.viewer.selectionRange();
     const selTag = sel ? `[sel ${sel[0]}-${sel[1]}]` : '';
     const left = filePath ? ` ${filePath} ${selTag}` : ' tcode ';
-    const right = ` ${themeTag} ${wrapTag} | Tab | ^P search | ^A claude | ^G git | w wrap | q quit `;
+    const right = ` ${themeTag} ${wrapTag} | Tab | ^P search | ^A claude | ^G git | w wrap | d theme | q quit `;
     const total = (this.screen.width as number) || 80;
     const pad = Math.max(1, total - left.length - right.length);
     this.status.setContent(left + ' '.repeat(pad) + right);
@@ -100,10 +102,12 @@ export class App {
   private dimOn() { this.dim.show(); this.dim.setFront(); }
   private dimOff() { this.dim.hide(); }
 
-  private setSplitCol(col: number) {
+  private setSplitCol(col: number, opts: { updateRatio?: boolean } = {}) {
     const total = (this.screen.width as number) || 80;
-    col = clamp(col, MIN_PANE, total - MIN_PANE);
-    if (col === this.splitCol) return;
+    col = clampSplit(col, total);
+    const changed = col !== this.splitCol;
+    if (opts.updateRatio !== false && total > 0) this.splitRatio = col / total;
+    if (!changed) return;
     this.splitCol = col;
     (this.tree.list as any).width = col;
     (this.viewer.box as any).left = col;
@@ -212,9 +216,14 @@ export class App {
     (this.viewer.box as any).key(['C-g'], openGit);
     this.screen.key(['C-g'], openGit);
 
+    const toggleTheme = () => {
+      this.setTheme(this.theme.mode === 'dark' ? LIGHT : DARK);
+    };
+    this.screen.key(['d', 'S-d'], toggleTheme);
+
     this.screen.on('resize', () => {
       const total = (this.screen.width as number) || 80;
-      this.setSplitCol(clamp(this.splitCol, MIN_PANE, total - MIN_PANE));
+      this.setSplitCol(colForRatio(this.splitRatio, total), { updateRatio: false });
       this.refreshStatus(this.viewer.currentFile);
       this.screen.render();
     });
@@ -222,6 +231,27 @@ export class App {
 
   private anyModalOpen(): boolean {
     return this.palette.visible || this.chat.visible || this.git.visible;
+  }
+
+  private setTheme(theme: Theme) {
+    this.theme = theme;
+    this.tree.applyTheme(theme);
+    this.viewer.applyTheme(theme);
+    this.palette.applyTheme(theme);
+    this.chat.applyTheme(theme);
+    this.git.applyTheme(theme);
+    const sb: any = this.status;
+    sb.style = sb.style ?? {};
+    sb.style.bg = theme.statusBg;
+    sb.style.fg = theme.statusFg;
+    const sp: any = this.splitter;
+    sp.style = sp.style ?? {};
+    sp.style.bg = theme.borderFg;
+    const dm: any = this.dim;
+    dm.style = dm.style ?? {};
+    dm.style.bg = theme.dimBg;
+    this.refreshStatus(this.viewer.currentFile);
+    this.screen.render();
   }
 
   private quit() {
@@ -237,4 +267,13 @@ export class App {
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n));
+}
+
+function clampSplit(col: number, total: number): number {
+  if (total < 2 * MIN_PANE) return Math.max(1, Math.floor(total / 2));
+  return clamp(col, MIN_PANE, total - MIN_PANE);
+}
+
+function colForRatio(ratio: number, total: number): number {
+  return clampSplit(Math.round(ratio * total), total);
 }

@@ -2,6 +2,7 @@ import * as blessed from 'blessed';
 import * as path from 'path';
 import { FileSystem, TreeNode } from './files';
 import { Theme } from './theme';
+import { applyListThemeStyles } from './viewer';
 
 interface FlatItem extends TreeNode {
   depth: number;
@@ -157,6 +158,11 @@ export class FileTree {
 
   focus() {
     this.list.focus();
+  }
+
+  applyTheme(theme: Theme) {
+    applyListThemeStyles(this.list as any, theme);
+    this.list.screen.render();
   }
 
   revealFile(filePath: string) {
