@@ -1,7 +1,40 @@
 #!/usr/bin/env node
 import * as path from 'path';
+import * as os from 'os';
+import * as fs from 'fs';
+import { spawn } from 'child_process';
 import { App } from './app';
 import { ThemeChoice } from './theme';
+
+// Best-effort self-update: pull the latest tcode and rebuild in the background
+// so the NEXT launch is current. Never blocks or crashes startup.
+function selfUpdate(): void {
+  try {
+    // Compiled entry lives at <repo>/dist/index.js, so the repo is one up.
+    const repoRoot = path.resolve(__dirname, '..');
+    if (!fs.existsSync(path.join(repoRoot, '.git'))) return;
+    const child = spawn(
+      'sh',
+      ['-c', 'git pull --quiet --ff-only && npm run build --silent'],
+      { cwd: repoRoot, detached: true, stdio: 'ignore' }
+    );
+    child.unref();
+  } catch {
+    /* ignore — updating is never allowed to break the app */
+  }
+}
+
+// Resolve the directory tcode should operate on. `tcode` (no arg) uses the
+// current working directory; `tcode <path>` uses that path. Both are
+// equivalent ways to point tcode at a folder, and Ctrl+P / the file tree are
+// always scoped to it.
+function resolveStartDir(arg: string | undefined): string {
+  if (!arg) return process.cwd();
+  let d = arg;
+  if (d === '~') d = os.homedir();
+  else if (d.startsWith('~/')) d = path.join(os.homedir(), d.slice(2));
+  return path.resolve(d);
+}
 
 const args = process.argv.slice(2);
 let dir: string | undefined;
@@ -29,11 +62,12 @@ for (const a of args) {
       'In-app shortcuts:\n' +
       '  Tab          switch panes\n' +
       '  Ctrl+P       fuzzy file search\n' +
-      '  Ctrl+A       ask Claude (uses current selection as context)\n' +
+      '  Ctrl+A       toggle Claude side panel\n' +
       '  Ctrl+G       git explorer (commits + diffs)\n' +
       '  Ctrl+N       (in chat) new conversation\n' +
       '  Shift+↑/↓    extend line selection in editor\n' +
       '  Shift+click  extend selection to clicked line\n' +
+      '  d            toggle dark / light theme\n' +
       '  Esc          clear selection\n' +
       '  w            toggle line wrap\n' +
       '  drag splitter to resize panes\n' +
@@ -45,6 +79,19 @@ for (const a of args) {
   }
 }
 
-const root = dir ? path.resolve(dir) : process.cwd();
+const root = resolveStartDir(dir);
+
+try {
+  if (!fs.statSync(root).isDirectory()) {
+    process.stderr.write(`tcode: not a directory: ${root}\n`);
+    process.exit(1);
+  }
+} catch {
+  process.stderr.write(`tcode: no such directory: ${root}\n`);
+  process.exit(1);
+}
+
+selfUpdate();
+
 const app = new App(root, { wrap, theme });
 app.run();

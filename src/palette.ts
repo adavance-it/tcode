@@ -4,6 +4,7 @@ import Fuse from 'fuse.js';
 import { FileSystem } from './files';
 import { Theme } from './theme';
 import { applyListThemeStyles } from './viewer';
+import { wheelScrollsViewportOnly, clickSelectsInPlace } from './listmouse';
 
 export class CommandPalette {
   private screen: blessed.Widgets.Screen;
@@ -22,6 +23,9 @@ export class CommandPalette {
     this.screen = screen;
     this.fs = fs_;
 
+    // Show the directory the search is scoped to, so it's always clear that
+    // Ctrl+P only walks files under tcode's start directory.
+    const scope = path.basename(fs_.root) || fs_.root;
     this.container = blessed.box({
       parent: screen,
       hidden: true,
@@ -30,7 +34,7 @@ export class CommandPalette {
       width: '70%',
       height: '60%',
       border: 'line',
-      label: ' Search files (type to filter, Esc to close) ',
+      label: ` Search files in ${scope} (Esc to close) `,
       style: {
         border: { fg: theme.modalBorderFg },
       },
@@ -98,6 +102,10 @@ export class CommandPalette {
 
     this.input.on('submit', () => this.choose());
     this.input.on('cancel', () => this.hide());
+
+    // Wheel scrolls the result list; a click picks that result.
+    wheelScrollsViewportOnly(this.list);
+    clickSelectsInPlace(this.list, () => this.choose());
   }
 
   private ensureIndex() {

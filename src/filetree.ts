@@ -3,6 +3,7 @@ import * as path from 'path';
 import { FileSystem, TreeNode } from './files';
 import { Theme } from './theme';
 import { applyListThemeStyles } from './viewer';
+import { wheelScrollsViewportOnly, clickSelectsInPlace } from './listmouse';
 
 interface FlatItem extends TreeNode {
   depth: number;
@@ -47,13 +48,6 @@ export class FileTree {
     });
 
     this.list.on('select', (_item: any, idx: number) => this.handleEnter(idx));
-    // Single click on an item → open file or toggle directory immediately.
-    // blessed.list's default 'element click' handler runs first and updates
-    // `selected` to the clicked index; we then act on that.
-    this.list.on('element click', () => {
-      const idx = (this.list as any).selected as number;
-      this.handleEnter(idx);
-    });
     this.list.key(['right', 'l'], () => this.expandCurrent());
     this.list.key(['left', 'h'], () => this.collapseCurrent());
     this.list.key(['space'], () => {
@@ -61,49 +55,16 @@ export class FileTree {
       this.handleEnter(idx);
     });
 
-    this.disableMouseScroll();
+    // Mouse: wheel scrolls the viewport only; a single click opens the file /
+    // toggles the directory, selecting it in place without a scroll jump.
+    wheelScrollsViewportOnly(this.list);
+    clickSelectsInPlace(this.list, idx => this.handleEnter(idx));
     this.rebuild();
   }
 
-  // blessed.list's default wheel handler moves the cursor (and thus scrolls).
-  // We want wheel to scroll the viewport while keyboard nav drives the cursor.
-  private disableMouseScroll() {
-    const list: any = this.list;
-    for (const ev of ['wheelup', 'wheeldown', 'element wheelup', 'element wheeldown']) {
-      list.removeAllListeners(ev);
-    }
-    this.list.on('element wheelup', () => this.scrollViewport(-3));
-    this.list.on('element wheeldown', () => this.scrollViewport(3));
-
-    // Restore childBase if a click ever shifts it (clicks on visible items
-    // shouldn't scroll, but trackpads can deliver stray scroll deltas).
-    let savedBase = 0;
-    this.list.on('mouse', () => {
-      savedBase = list.childBase ?? 0;
-    });
-  }
-
-  private visibleRows(): number {
-    const h = (this.list.height as number) || 20;
-    return Math.max(1, h - 2); // top/bottom borders
-  }
-
-  private scrollViewport(delta: number) {
-    const list: any = this.list;
-    const visible = this.visibleRows();
-    const max = Math.max(0, this.items.length - visible);
-    const oldBase = list.childBase ?? 0;
-    const newBase = Math.max(0, Math.min(max, oldBase + delta));
-    if (newBase === oldBase) return;
-    list.childBase = newBase;
-    // Keep selection at its absolute index. childOffset is the on-screen row
-    // of the cursor; if the selection scrolls offscreen, the cursor highlight
-    // disappears until the user scrolls back or moves with the keyboard.
-    list.childOffset = (list.selected ?? 0) - newBase;
-    this.list.screen.render();
-  }
-
   private rebuild() {
+    const list: any = this.list;
+    const savedBase = list.childBase ?? 0;
     this.items = [];
     const walk = (dir: string, depth: number) => {
       for (const n of this.fs.listDir(dir)) {
@@ -114,6 +75,19 @@ export class FileTree {
     };
     walk(this.fs.root, 0);
     this.list.setItems(this.items.map(i => this.renderItem(i)));
+    // setItems can reset the scroll offset; keep the viewport where it was so
+    // expanding/collapsing a directory doesn't jump the user around.
+    list.childBase = Math.max(0, Math.min(savedBase, this.items.length - 1));
+    this.list.screen.render();
+  }
+
+  // Move the selection cursor to `idx` without scrolling the viewport.
+  private selectInPlace(idx: number) {
+    const list: any = this.list;
+    const clamped = Math.max(0, Math.min(idx, this.items.length - 1));
+    const base = list.childBase ?? 0;
+    list.selected = clamped;
+    list.childOffset = clamped - base;
     this.list.screen.render();
   }
 
@@ -133,7 +107,8 @@ export class FileTree {
       if (this.expanded.has(item.path)) this.expanded.delete(item.path);
       else this.expanded.add(item.path);
       this.rebuild();
-      this.list.select(Math.min(idx, this.items.length - 1));
+      // The toggled directory line stays where it was on screen — no jump.
+      this.selectInPlace(idx);
     } else {
       this.onOpen(item.path);
     }
@@ -145,7 +120,7 @@ export class FileTree {
     if (item?.isDirectory && !this.expanded.has(item.path)) {
       this.expanded.add(item.path);
       this.rebuild();
-      this.list.select(idx);
+      this.selectInPlace(idx);
     }
   }
 
@@ -155,10 +130,12 @@ export class FileTree {
     if (item?.isDirectory && this.expanded.has(item.path)) {
       this.expanded.delete(item.path);
       this.rebuild();
-      this.list.select(idx);
+      this.selectInPlace(idx);
     } else if (item) {
       const parent = path.dirname(item.path);
       const parentIdx = this.items.findIndex(it => it.path === parent);
+      // Jumping to the parent is keyboard-driven nav — scroll to it if it's
+      // currently off-screen.
       if (parentIdx >= 0) this.list.select(parentIdx);
     }
   }

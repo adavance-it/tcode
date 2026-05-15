@@ -5,6 +5,7 @@ import { spawn, ChildProcess } from 'child_process';
 import { highlight, supportsLanguage } from 'cli-highlight';
 import { Theme } from './theme';
 import { applyListThemeStyles } from './viewer';
+import { wheelScrollsViewportOnly, clickSelectsInPlace } from './listmouse';
 
 export interface FileRef {
   path: string;
@@ -231,6 +232,13 @@ export class ClaudeChat {
       // Don't hide — chat is a side pane and stays open. The viewer will be
       // refocused by App's onOpenFile handler.
       this.onOpenFile(r.path, r.line);
+    });
+
+    // Wheel scrolls the refs list; a click opens that ref.
+    wheelScrollsViewportOnly(this.refsBox);
+    clickSelectsInPlace(this.refsBox, idx => {
+      const r = this.refs[idx];
+      if (r) this.onOpenFile(r.path, r.line);
     });
 
     // Click on a styled ref inside the answer → open it in the editor.

@@ -3,6 +3,7 @@ import { spawnSync } from 'child_process';
 import * as path from 'path';
 import { Theme } from './theme';
 import { applyListThemeStyles } from './viewer';
+import { wheelScrollsViewportOnly, clickSelectsInPlace } from './listmouse';
 
 interface Commit {
   sha: string;
@@ -137,6 +138,14 @@ export class GitExplorer {
     this.filesList.key(['enter'], () => this.openSelectedFile());
     this.filesList.key(['tab'], () => this.diff.focus());
     this.filesList.key(['escape'], () => this.backToCommits());
+
+    // Mouse: wheel scrolls the commit/file list without moving the selection;
+    // a click jumps to that commit (commits mode) or shows that file's diff
+    // (files mode), selecting the row in place with no scroll jump.
+    wheelScrollsViewportOnly(this.commitsList);
+    wheelScrollsViewportOnly(this.filesList);
+    clickSelectsInPlace(this.commitsList, () => this.openCommit());
+    clickSelectsInPlace(this.filesList, () => this.loadFileDiff());
 
     // diff: tab back to whichever list is active; esc respects current mode
     this.diff.key(['tab'], () => this.activeList().focus());
