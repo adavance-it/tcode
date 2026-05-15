@@ -11,6 +11,9 @@ interface Commit {
   date: string;
   author: string;
   subject: string;
+  // Synthetic entry for the working tree (uncommitted changes), not a real
+  // commit. When set, sha is empty and diffs come from `git diff HEAD`.
+  working?: boolean;
 }
 
 type Mode = 'commits' | 'files';
@@ -182,6 +185,26 @@ export class GitExplorer {
   }
 
   private loadCommits() {
+    this.commits = [];
+    this.commitRowMap = [];
+    const items: string[] = [];
+
+    // Working-tree entry first, if there's anything uncommitted (tracked
+    // changes, staged changes, or untracked files). Selecting it diffs the
+    // working tree against HEAD instead of showing a commit.
+    const status = spawnSync('git', ['status', '--porcelain'], {
+      cwd: this.root, encoding: 'utf8',
+    });
+    if (status.status === 0 && status.stdout.trim()) {
+      const n = status.stdout.split('\n').filter(l => l.trim()).length;
+      this.commits.push({
+        sha: '', shortSha: '~', date: '', author: '',
+        subject: 'Uncommitted changes', working: true,
+      });
+      this.commitRowMap.push(0);
+      items.push(`\x1b[33m● Uncommitted changes (${n})\x1b[39m`);
+    }
+
     // %x00 = literal NUL. We splice the format AFTER --graph, so each commit
     // line looks like:   <graph_chars>\x00<sha>\x00<short>\x00<date>\x00<author>\x00<subject>%d
     // Connector lines (pure graph, no commit) have no NUL and become non-selectable rows.
@@ -194,29 +217,31 @@ export class GitExplorer {
       '--date=short', '-500',
     ], { cwd: this.root, encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 });
     if (r.status !== 0) {
-      this.commitsList.setItems(['(not a git repository, or git failed)']);
-      this.commits = [];
-      this.commitRowMap = [];
-      this.diff.setContent(r.stderr || '');
-      return;
-    }
-    this.commits = [];
-    this.commitRowMap = [];
-    const items: string[] = [];
-    for (const rawLine of r.stdout.split('\n')) {
-      const nulIdx = rawLine.indexOf('\x00');
-      if (nulIdx === -1) {
-        // Pure graph connector — keep it visible but mark as non-commit.
-        items.push(rawLine);
-        this.commitRowMap.push(-1);
-        continue;
+      // git log fails on a repo with no commits yet; still show the working
+      // entry if we have one (a fresh repo with untracked files).
+      if (!this.commits.length) {
+        this.commitsList.setItems(['(not a git repository, or git failed)']);
+        this.commitRowMap = [];
+        this.diff.setContent(r.stderr || '');
+        return;
       }
-      const graph = rawLine.slice(0, nulIdx);
-      const [sha, shortSha, date, author, subject] = rawLine.slice(nulIdx + 1).split('\x00');
-      this.commits.push({ sha, shortSha, date, author, subject });
-      this.commitRowMap.push(this.commits.length - 1);
-      items.push(`${graph}${shortSha}  ${date}  ${truncate(author, 12)}  ${subject}`);
+    } else {
+      for (const rawLine of r.stdout.split('\n')) {
+        const nulIdx = rawLine.indexOf('\x00');
+        if (nulIdx === -1) {
+          // Pure graph connector — keep it visible but mark as non-commit.
+          items.push(rawLine);
+          this.commitRowMap.push(-1);
+          continue;
+        }
+        const graph = rawLine.slice(0, nulIdx);
+        const [sha, shortSha, date, author, subject] = rawLine.slice(nulIdx + 1).split('\x00');
+        this.commits.push({ sha, shortSha, date, author, subject });
+        this.commitRowMap.push(this.commits.length - 1);
+        items.push(`${graph}${shortSha}  ${date}  ${truncate(author, 12)}  ${subject}`);
+      }
     }
+
     this.commitsList.setItems(items);
     if (this.commits.length) {
       const firstRow = this.commitRowMap.findIndex(i => i >= 0);
@@ -226,6 +251,42 @@ export class GitExplorer {
       }
       this.previewCommitStat();
     }
+  }
+
+  // Files with uncommitted changes (tracked + staged + untracked), sorted.
+  private workingFiles(): string[] {
+    const r = spawnSync('git', ['status', '--porcelain'], {
+      cwd: this.root, encoding: 'utf8',
+    });
+    if (r.status !== 0) return [];
+    const files: string[] = [];
+    for (const line of r.stdout.split('\n')) {
+      if (!line.trim()) continue;
+      let p = line.slice(3); // strip the 2-char XY status + space
+      const arrow = p.indexOf(' -> ');
+      if (arrow >= 0) p = p.slice(arrow + 4); // rename: keep the new path
+      p = p.replace(/^"(.*)"$/, '$1');         // unquote special-char paths
+      files.push(p);
+    }
+    return files.sort();
+  }
+
+  // Diff of one file against HEAD; falls back to a full-file diff for an
+  // untracked file (which `git diff HEAD` ignores).
+  private workingFileDiff(file: string): string {
+    let r = spawnSync('git', ['diff', 'HEAD', '--color=always', '--', file], {
+      cwd: this.root, encoding: 'utf8', maxBuffer: 50 * 1024 * 1024,
+    });
+    let out = r.status === 0 ? r.stdout : '';
+    if (!out.trim()) {
+      // Untracked: diff against /dev/null renders the whole file as added.
+      // `git diff --no-index` exits 1 when files differ, so ignore status.
+      r = spawnSync('git', ['diff', '--no-index', '--color=always', '--', '/dev/null', file], {
+        cwd: this.root, encoding: 'utf8', maxBuffer: 50 * 1024 * 1024,
+      });
+      out = r.stdout || '';
+    }
+    return out;
   }
 
   // Returns the commit at the currently-selected row, or undefined for connectors.
@@ -262,6 +323,25 @@ export class GitExplorer {
     if (this.mode !== 'commits') return;
     const c = this.currentCommit();
     if (!c) return;
+    if (c.working) {
+      const r = spawnSync('git', ['diff', 'HEAD', '--stat', '--color=always'], {
+        cwd: this.root, encoding: 'utf8', maxBuffer: 5 * 1024 * 1024,
+      });
+      let out = r.status === 0 ? r.stdout : (r.stderr || '');
+      const untracked = (spawnSync('git', ['ls-files', '--others', '--exclude-standard'], {
+        cwd: this.root, encoding: 'utf8',
+      }).stdout || '').split('\n').filter(Boolean);
+      if (untracked.length) {
+        out += (out.trim() ? '\n' : '') +
+          `\x1b[33mUntracked files (${untracked.length}):\x1b[39m\n` +
+          untracked.map(u => '  ' + u).join('\n') + '\n';
+      }
+      this.diff.setContent(out.trim() ? out : '(working tree clean)');
+      this.diff.scrollTo(0);
+      this.diff.setLabel(' Uncommitted changes ');
+      this.screen.render();
+      return;
+    }
     const r = spawnSync('git', ['show', '--stat', '--color=always', '--format=%s%n%nAuthor: %an%nDate:   %ad%n%n%b', c.sha], {
       cwd: this.root, encoding: 'utf8', maxBuffer: 5 * 1024 * 1024,
     });
@@ -278,24 +358,35 @@ export class GitExplorer {
     if (!c) return;
     this.selectedCommit = c;
 
-    const r = spawnSync('git', ['show', '--name-only', '--pretty=format:', c.sha], {
-      cwd: this.root, encoding: 'utf8',
-    });
-    if (r.status !== 0) {
-      this.diff.setContent(r.stderr || `git show failed for ${c.sha}`);
-      this.screen.render();
-      return;
+    if (c.working) {
+      this.files = this.workingFiles();
+      if (!this.files.length) {
+        this.diff.setContent('(working tree clean)');
+        this.screen.render();
+        return;
+      }
+      this.filesList.setItems(this.files);
+      (this.filesList as any).select(0);
+      this.filesList.setLabel(` Uncommitted — Files (${this.files.length}) `);
+    } else {
+      const r = spawnSync('git', ['show', '--name-only', '--pretty=format:', c.sha], {
+        cwd: this.root, encoding: 'utf8',
+      });
+      if (r.status !== 0) {
+        this.diff.setContent(r.stderr || `git show failed for ${c.sha}`);
+        this.screen.render();
+        return;
+      }
+      this.files = r.stdout.split('\n').map(s => s.trim()).filter(Boolean).sort();
+      if (!this.files.length) {
+        this.diff.setContent('(no files in this commit)');
+        this.screen.render();
+        return;
+      }
+      this.filesList.setItems(this.files);
+      (this.filesList as any).select(0);
+      this.filesList.setLabel(` ${c.shortSha} — Files (${this.files.length}) `);
     }
-    this.files = r.stdout.split('\n').map(s => s.trim()).filter(Boolean).sort();
-    if (!this.files.length) {
-      this.diff.setContent('(no files in this commit)');
-      this.screen.render();
-      return;
-    }
-
-    this.filesList.setItems(this.files);
-    (this.filesList as any).select(0);
-    this.filesList.setLabel(` ${c.shortSha} — Files (${this.files.length}) `);
 
     this.mode = 'files';
     this.commitsList.hide();
@@ -323,6 +414,14 @@ export class GitExplorer {
     const idx = (this.filesList as any).selected as number;
     const file = this.files[idx];
     if (!file) return;
+    if (c.working) {
+      const out = this.workingFileDiff(file);
+      this.diff.setContent(out.trim() ? out : '(no diff for this file)');
+      this.diff.scrollTo(0);
+      this.diff.setLabel(` ${file} (uncommitted) `);
+      this.screen.render();
+      return;
+    }
     const r = spawnSync('git', [
       'show', '--color=always', '--format=', c.sha, '--', file,
     ], { cwd: this.root, encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 });
@@ -374,11 +473,16 @@ export class GitExplorer {
   private openTouchedFile() {
     const c = this.currentCommit();
     if (!c) return;
-    const r = spawnSync('git', ['show', '--name-only', '--pretty=format:', c.sha], {
-      cwd: this.root, encoding: 'utf8',
-    });
-    if (r.status !== 0) return;
-    const files = r.stdout.split('\n').map(s => s.trim()).filter(Boolean);
+    let files: string[];
+    if (c.working) {
+      files = this.workingFiles();
+    } else {
+      const r = spawnSync('git', ['show', '--name-only', '--pretty=format:', c.sha], {
+        cwd: this.root, encoding: 'utf8',
+      });
+      if (r.status !== 0) return;
+      files = r.stdout.split('\n').map(s => s.trim()).filter(Boolean);
+    }
     if (!files.length) return;
     const abs = path.resolve(this.root, files[0]);
     this.hide();
