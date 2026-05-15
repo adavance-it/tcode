@@ -2,9 +2,26 @@
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { App } from './app';
 import { ThemeChoice } from './theme';
+
+// The canonical install one-liner (kept in sync with README / install.sh).
+const INSTALL_CMD =
+  'curl -fsSL https://raw.githubusercontent.com/adavance-it/tcode/main/install.sh | bash';
+
+// `tcode update`: re-run the install one-liner so tcode reinstalls itself
+// from the latest main (clone/pull + build + npm link). Foreground so the
+// installer's progress is visible; exits with the installer's status.
+function runUpdate(): never {
+  process.stdout.write('tcode: updating via the install script…\n\n');
+  const r = spawnSync('sh', ['-c', INSTALL_CMD], { stdio: 'inherit' });
+  if (r.error) {
+    process.stderr.write(`tcode: update failed: ${r.error.message}\n`);
+    process.exit(1);
+  }
+  process.exit(r.status ?? 0);
+}
 
 // Best-effort self-update: pull the latest tcode and rebuild in the background
 // so the NEXT launch is current. Never blocks or crashes startup.
@@ -37,6 +54,9 @@ function resolveStartDir(arg: string | undefined): string {
 }
 
 const args = process.argv.slice(2);
+
+if (args[0] === 'update') runUpdate(); // never returns
+
 let dir: string | undefined;
 let wrap = true;
 let theme: ThemeChoice = 'auto';
@@ -52,6 +72,7 @@ for (const a of args) {
   } else if (a === '-h' || a === '--help') {
     process.stdout.write(
       'Usage: tcode [options] [path]\n' +
+      '       tcode update          reinstall tcode from the latest main\n' +
       '\n' +
       'Options:\n' +
       '  --no-wrap          long lines truncated instead of wrapped\n' +

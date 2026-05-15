@@ -16,6 +16,17 @@ The installer clones the repo to `~/dev/tcode`, builds it, and links
 `tcode` on your `PATH`. It's idempotent: re-running updates an existing
 checkout. Override the destination with `TCODE_DIR=/somewhere/else`.
 
+Once installed, update in place with:
+
+```bash
+tcode update
+```
+
+`tcode update` just re-runs the install one-liner above (pull + build +
+link). tcode also kicks off a background `git pull` + rebuild on every
+launch, so it stays current on its own — `tcode update` is the explicit,
+synchronous way to do it now.
+
 Alternative one-liner via npm (uses the package's `prepare` script):
 
 ```bash
@@ -32,6 +43,7 @@ tcode                    # browse the current directory
 tcode ~/dev/myrepo       # browse a specific directory
 tcode --no-wrap repo/    # start with line wrap off
 tcode --light            # force light theme (default: auto via $COLORFGBG)
+tcode update             # reinstall from the latest main
 tcode --help             # full options list
 ```
 
