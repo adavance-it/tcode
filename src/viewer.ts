@@ -45,6 +45,11 @@ export class Viewer {
   box: blessed.Widgets.BoxElement;
   currentFile: string | null = null;
   wrap: boolean;
+  // Horizontal scroll offset, in visible columns, applied to the code portion
+  // of every line (the line-number gutter stays fixed). Only meaningful with
+  // wrap off.
+  hScroll = 0;
+  private maxLineWidth = 0;
   private theme: Theme;
   private highlightedLine?: number;
   private rawText: string = '';
@@ -55,6 +60,7 @@ export class Viewer {
   onFileChange: (filePath: string | null) => void = () => {};
   onWrapChange: (wrap: boolean) => void = () => {};
   onSelectionChange: () => void = () => {};
+  onHScrollChange: () => void = () => {};
 
   private welcomeText = [
     '',
@@ -71,7 +77,8 @@ export class Viewer {
     '     j/k or ↑/↓     move',
     '     g / G          top / bottom of file',
     '     Shift+↑/↓      extend line selection (or drag with mouse)',
-    '     w              toggle line wrap',
+    '     Shift+wheel    scroll horizontally (when wrap is off)',
+    '     w              toggle line wrap (off by default)',
     '     d              toggle dark / light theme',
     '     q / Ctrl+C     quit',
     '',
@@ -79,7 +86,7 @@ export class Viewer {
 
   constructor(screen: blessed.Widgets.Screen, theme: Theme, opts: ViewerOpts = {}) {
     this.theme = theme;
-    this.wrap = opts.wrap ?? true;
+    this.wrap = opts.wrap ?? false;
     this.box = blessed.box({
       parent: screen,
       label: ' Editor ',
@@ -160,6 +167,35 @@ export class Viewer {
     this.box.on('mouseup', () => { this.draggingSel = false; });
     // mouseup outside the box fires on the screen; cover that too
     screen.on('mouseup', () => { this.draggingSel = false; });
+
+    // Wheel: plain wheel scrolls vertically; Shift+wheel scrolls horizontally.
+    // We replace blessed's default wheel→vertical-scroll so a Shift+wheel does
+    // ONLY the horizontal move (no stray vertical jump).
+    for (const ev of ['wheelup', 'wheeldown', 'element wheelup', 'element wheeldown']) {
+      (this.box as any).removeAllListeners(ev);
+    }
+    this.box.on('wheelup', (data: any) => {
+      if (data && data.shift) this.hScrollBy(-8);
+      else { this.box.scroll(-3); this.box.screen.render(); }
+    });
+    this.box.on('wheeldown', (data: any) => {
+      if (data && data.shift) this.hScrollBy(8);
+      else { this.box.scroll(3); this.box.screen.render(); }
+    });
+  }
+
+  private hScrollBy(delta: number) {
+    if (this.wrap || !this.rawLines.length) return;
+    const numWidth = String(this.rawLines.length).length;
+    const gutter = numWidth + 4; // "  " + number + "  "
+    const innerW = ((this.box.width as number) || 80) - 2; // minus borders
+    const codeW = Math.max(10, innerW - gutter);
+    const max = Math.max(0, this.maxLineWidth - codeW);
+    const next = Math.max(0, Math.min(max, this.hScroll + delta));
+    if (next === this.hScroll) return;
+    this.hScroll = next;
+    this.rerender();
+    this.onHScrollChange();
   }
 
   hasSelection(): boolean {
@@ -230,8 +266,14 @@ export class Viewer {
   toggleWrap() {
     this.wrap = !this.wrap;
     (this.box as any).wrap = this.wrap;
-    if (this.currentFile) this.load(this.currentFile, this.highlightedLine);
-    else this.box.screen.render();
+    if (this.wrap) this.hScroll = 0; // horizontal scroll is moot once wrapping
+    // blessed caches the wrapped lines in `_clines`, keyed only by content +
+    // width. Flipping the wrap flag with identical content does NOT invalidate
+    // that cache, so the toggle silently no-ops until some later interaction
+    // (resize, new file) forces a re-parse — the "have to do something else
+    // for it to kick in" bug. Drop the cache so the flip applies right away.
+    (this.box as any)._clines = null;
+    this.rerender();
     this.onWrapChange(this.wrap);
   }
 
@@ -239,6 +281,7 @@ export class Viewer {
     this.highlightedLine = line && line > 0 ? line : undefined;
     this.selectionAnchor = undefined;
     this.selectionActive = undefined;
+    this.hScroll = 0;
 
     let content: string;
     let raw = '';
@@ -265,6 +308,7 @@ export class Viewer {
           }
           this.rawText = text;
           this.rawLines = raw.split('\n');
+          this.maxLineWidth = this.rawLines.reduce((m, l) => Math.max(m, l.length), 0);
           content = this.withLineNumbers(text, this.highlightedLine);
         }
       }
@@ -275,6 +319,7 @@ export class Viewer {
     if (!raw) {
       this.rawText = '';
       this.rawLines = [];
+      this.maxLineWidth = 0;
     }
     this.currentFile = filePath;
     this.box.setLabel(' ' + path.basename(filePath) + ' ');
@@ -298,16 +343,18 @@ export class Viewer {
       .map((l, i) => {
         const num = String(i + 1).padStart(width, ' ');
         const lineNum = i + 1;
+        // Horizontal scroll slides only the code; the gutter stays fixed.
+        const code = this.hScroll > 0 ? sliceAnsiLeft(l, this.hScroll) : l;
         if (selRange && lineNum >= selRange[0] && lineNum <= selRange[1]) {
           // Pastel bg persists through cli-highlight's fg toggles (39 only resets fg).
           // We color only the gutter; \x1b[39m before content lets syntax tokens keep
           // their original fg over the selection bg.
-          return `${selBg}${selNumFg}  ${num}\x1b[39m  ${l}\x1b[0m`;
+          return `${selBg}${selNumFg}  ${num}\x1b[39m  ${code}\x1b[0m`;
         }
         if (hl === lineNum) {
-          return `${hlBg}\x1b[33m▸ ${num}\x1b[39m  ${l}\x1b[0m`;
+          return `${hlBg}\x1b[33m▸ ${num}\x1b[39m  ${code}\x1b[0m`;
         }
-        return `  \x1b[90m${num}\x1b[39m  ${l}`;
+        return `  \x1b[90m${num}\x1b[39m  ${code}`;
       })
       .join('\n');
   }
@@ -329,6 +376,31 @@ export class Viewer {
     applyScrollbarStyle(this.box, theme);
     this.rerender();
   }
+}
+
+// Drop the first `startCol` visible columns of an ANSI-laden string, keeping
+// the syntax-color state that was active at the cut point (so a horizontally
+// scrolled line still renders with the right colors).
+function sliceAnsiLeft(s: string, startCol: number): string {
+  if (startCol <= 0) return s;
+  let visible = 0;
+  let i = 0;
+  let activeAnsi = '';
+  while (i < s.length && visible < startCol) {
+    if (s[i] === '\x1b') {
+      const m = /^\x1b\[[\d;]*m/.exec(s.slice(i));
+      if (m) {
+        const code = m[0];
+        if (code === '\x1b[0m' || code === '\x1b[m') activeAnsi = '';
+        else activeAnsi += code;
+        i += code.length;
+        continue;
+      }
+    }
+    visible++;
+    i++;
+  }
+  return activeAnsi + s.slice(i);
 }
 
 function applyBorderStyle(widget: any, theme: Theme) {

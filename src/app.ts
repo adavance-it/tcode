@@ -111,7 +111,8 @@ export class App {
     const themeTag = `[${this.theme.mode}]`;
     const sel = this.viewer.selectionRange();
     const selTag = sel ? `[sel ${sel[0]}-${sel[1]}]` : '';
-    const left = filePath ? ` ${filePath} ${selTag}` : ' tcode ';
+    const hsTag = this.viewer.hScroll > 0 ? `[→${this.viewer.hScroll}]` : '';
+    const left = filePath ? ` ${filePath} ${selTag}${hsTag}` : ' tcode ';
     const right = ` ${themeTag} ${wrapTag} | Tab | ^P search | ^A claude | ^G git | w wrap | d theme | q quit `;
     const total = (this.screen.width as number) || 80;
     const pad = Math.max(1, total - left.length - right.length);
@@ -176,6 +177,10 @@ export class App {
       this.screen.render();
     };
     this.viewer.onWrapChange = () => {
+      this.refreshStatus(this.viewer.currentFile);
+      this.screen.render();
+    };
+    this.viewer.onHScrollChange = () => {
       this.refreshStatus(this.viewer.currentFile);
       this.screen.render();
     };

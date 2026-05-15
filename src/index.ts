@@ -58,7 +58,7 @@ const args = process.argv.slice(2);
 if (args[0] === 'update') runUpdate(); // never returns
 
 let dir: string | undefined;
-let wrap = true;
+let wrap = false; // line wrap is OFF by default; use --wrap to enable
 let theme: ThemeChoice = 'auto';
 
 for (const a of args) {
@@ -75,8 +75,8 @@ for (const a of args) {
       '       tcode update          reinstall tcode from the latest main\n' +
       '\n' +
       'Options:\n' +
-      '  --no-wrap          long lines truncated instead of wrapped\n' +
-      '  --wrap             wrap long lines (default)\n' +
+      '  --no-wrap          long lines truncated instead of wrapped (default)\n' +
+      '  --wrap             wrap long lines\n' +
       '  --theme=auto|dark|light    force a theme (default: auto via $COLORFGBG)\n' +
       '  --dark / --light   shorthand for --theme=...\n' +
       '\n' +
@@ -88,6 +88,7 @@ for (const a of args) {
       '  Ctrl+N       (in chat) new conversation\n' +
       '  Shift+↑/↓    extend line selection in editor\n' +
       '  Shift+click  extend selection to clicked line\n' +
+      '  Shift+wheel  scroll the editor horizontally (when wrap is off)\n' +
       '  d            toggle dark / light theme\n' +
       '  Esc          clear selection\n' +
       '  w            toggle line wrap\n' +
