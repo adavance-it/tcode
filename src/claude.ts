@@ -13,12 +13,29 @@ export interface FileRef {
 }
 
 // One clickable region inside the rendered answer. Coords are content row /
-// visible column (output box has wrap:false, so visible row == content row).
+// visible column. We do our own word-wrap so visible row == content row.
 interface RefHit {
   row: number;
   col: number;
   length: number;
   ref: FileRef;
+}
+
+// Same idea but scoped to a single (pre-wrap) logical line; the wrap pass
+// remaps these to RefHits with absolute rows.
+interface LineHit {
+  col: number;
+  length: number;
+  ref: FileRef;
+}
+
+// Logical line emitted by renderMarkdown before wrapping. `wrap: false` is for
+// code-block content / fence markers — wrapping those would corrupt the
+// indentation and the syntax-highlighted layout.
+interface LogicalLine {
+  rendered: string;
+  hits: LineHit[];
+  wrap: boolean;
 }
 
 export class ClaudeChat {
@@ -232,6 +249,10 @@ export class ClaudeChat {
       if (hit) this.onOpenFile(hit.ref.path, hit.ref.line);
     });
 
+    // Re-wrap the answer when the panel is resized (chat splitter drag or
+    // terminal resize) so the line widths stay in sync with the box.
+    this.output.on('resize', () => this.rewrapAnswer());
+
     // Detach from the screen until first show(). Even hidden, a mounted
     // textbox can be picked up by blessed's focus pass at startup; the
     // resulting blur loop is what was crashing tcode on macOS.
@@ -309,10 +330,26 @@ export class ClaudeChat {
     this.screen.render();
 
     let prompt =
-      `You are helping a user explore a codebase from the terminal. ` +
-      `Answer the user's question concisely (under 250 words). ` +
-      `Whenever possible, reference specific files using paths relative to the current working directory, ` +
-      `formatted as \`path/to/file.ext:LINE\` so the user can jump to them.\n\n`;
+      `You are helping a user explore a codebase from inside a TUI code\n` +
+      `viewer. Your answer is rendered with a small markdown subset: headings,\n` +
+      `lists, **bold**, *italic*, \`inline code\`, and fenced code blocks\n` +
+      `(\`\`\`lang ... \`\`\`) with syntax highlighting. Refs of the form\n` +
+      `\`path/to/file.ext:LINE\` are turned into clickable hyperlinks that\n` +
+      `jump the user's editor pane to that exact line.\n\n` +
+      `HARD REQUIREMENTS for your answer:\n` +
+      `- Concise (under 250 words).\n` +
+      `- WHENEVER you mention any specific code construct — function, method,\n` +
+      `  class, type, constant, endpoint, route, command, schema field, env\n` +
+      `  var, config key, file, etc. — you MUST hyperlink it as\n` +
+      `  \`path/to/file.ext:LINE\`. The path MUST be relative to the user's\n` +
+      `  current working directory. The line number MUST point at the\n` +
+      `  construct's definition (or, if you're describing a usage, the most\n` +
+      `  relevant call site).\n` +
+      `- Link every construct individually. Do not aggregate ("see foo.ts");\n` +
+      `  give exact \`file:LINE\` for each one.\n` +
+      `- Verify the line numbers against the actual file before answering.\n` +
+      `  If you're not sure of an exact line, grep / read the file first.\n` +
+      `- Use fenced code blocks for any quoted code so it gets highlighted.\n\n`;
     if (this.pendingContext) {
       const rel = path.relative(this.root, this.pendingContext.file);
       prompt += `The user has selected the following lines from \`${rel}\` ` +
@@ -386,9 +423,11 @@ export class ClaudeChat {
   // *italic*, `inline code`, fenced code (```lang ... ```) with cli-highlight,
   // and detects refs (path/to/file.ext[:LINE]) — refs that match parsed
   // entries in this.refs are styled distinctly and recorded as hits.
+  // After per-line rendering, every wrappable line is word-wrapped at the
+  // current output width with its leading whitespace re-applied to
+  // continuation rows; ref hits are remapped to their post-wrap (row, col).
   private renderMarkdown(text: string): { rendered: string; hits: RefHit[] } {
-    const hits: RefHit[] = [];
-    const out: string[] = [];
+    const logical: LogicalLine[] = [];
     let inCode = false;
     let codeLang = '';
     let codeLines: string[] = [];
@@ -399,7 +438,9 @@ export class ClaudeChat {
         try { body = highlight(body, { language: codeLang, ignoreIllegals: true }); }
         catch { /* fall back to plain */ }
       }
-      for (const cl of body.split('\n')) out.push('  ' + cl);
+      for (const cl of body.split('\n')) {
+        logical.push({ rendered: '  ' + cl, hits: [], wrap: false });
+      }
     };
 
     for (const line of text.split('\n')) {
@@ -409,13 +450,13 @@ export class ClaudeChat {
           inCode = true;
           codeLang = fence[1];
           codeLines = [];
-          out.push('\x1b[2m' + line + '\x1b[0m');
+          logical.push({ rendered: '\x1b[2m' + line + '\x1b[0m', hits: [], wrap: false });
           continue;
         }
       } else {
         if (line.trim() === '```') {
           flushCode();
-          out.push('\x1b[2m```\x1b[0m');
+          logical.push({ rendered: '\x1b[2m```\x1b[0m', hits: [], wrap: false });
           inCode = false;
           continue;
         }
@@ -428,7 +469,7 @@ export class ClaudeChat {
         const lvl = heading[1].length;
         const txt = heading[2];
         const c = lvl === 1 ? '\x1b[1;33m' : lvl === 2 ? '\x1b[1;36m' : '\x1b[1m';
-        out.push(c + txt + '\x1b[0m');
+        logical.push({ rendered: c + txt + '\x1b[0m', hits: [], wrap: true });
         continue;
       }
 
@@ -440,23 +481,43 @@ export class ClaudeChat {
         const bullet = (marker === '-' || marker === '*') ? '•' : marker;
         const prefix = indent + '\x1b[33m' + bullet + '\x1b[39m ';
         const startCol = indent.length + bullet.length + 1;
-        const sub = this.renderInline(rest, startCol, out.length);
-        out.push(prefix + sub.rendered);
-        for (const h of sub.hits) hits.push(h);
+        const sub = this.renderInline(rest, startCol);
+        logical.push({ rendered: prefix + sub.rendered, hits: sub.hits, wrap: true });
         continue;
       }
 
-      const sub = this.renderInline(line, 0, out.length);
-      out.push(sub.rendered);
-      for (const h of sub.hits) hits.push(h);
+      const sub = this.renderInline(line, 0);
+      logical.push({ rendered: sub.rendered, hits: sub.hits, wrap: true });
     }
 
     if (inCode) flushCode(); // unclosed fence: render what we have
-    return { rendered: out.join('\n'), hits };
+
+    // Word-wrap pass: emit final rows + remapped hits.
+    const width = this.outputWidth();
+    const allLines: string[] = [];
+    const allHits: RefHit[] = [];
+    for (const ll of logical) {
+      const baseRow = allLines.length;
+      if (!ll.wrap) {
+        allLines.push(ll.rendered);
+        for (const h of ll.hits) {
+          allHits.push({ row: baseRow, col: h.col, length: h.length, ref: h.ref });
+        }
+        continue;
+      }
+      const wrapped = wrapLine(ll.rendered, ll.hits, width);
+      for (const wl of wrapped.lines) allLines.push(wl);
+      for (const h of wrapped.hits) {
+        allHits.push({ row: baseRow + h.row, col: h.col, length: h.length, ref: h.ref });
+      }
+    }
+    return { rendered: allLines.join('\n'), hits: allHits };
   }
 
-  private renderInline(text: string, startCol: number, row: number): { rendered: string; hits: RefHit[] } {
-    const hits: RefHit[] = [];
+  // Inner content of one source line. Returns the styled string plus per-line
+  // ref hits keyed by the visible column at which each ref starts.
+  private renderInline(text: string, startCol: number): { rendered: string; hits: LineHit[] } {
+    const hits: LineHit[] = [];
     let result = '';
     let col = startCol;
     let i = 0;
@@ -484,7 +545,7 @@ export class ClaudeChat {
             const ref = this.findRefMatch(m[1], m[2] ? parseInt(m[2], 10) : undefined);
             if (ref) {
               result += '\x1b[4;36m' + inner + '\x1b[24;39m';
-              hits.push({ row, col, length: inner.length, ref });
+              hits.push({ col, length: inner.length, ref });
               col += inner.length;
               i = end + 1;
               continue;
@@ -514,7 +575,7 @@ export class ClaudeChat {
           const ref = this.findRefMatch(m[1], m[2] ? parseInt(m[2], 10) : undefined);
           if (ref) {
             result += '\x1b[4;36m' + m[0] + '\x1b[24;39m';
-            hits.push({ row, col, length: m[0].length, ref });
+            hits.push({ col, length: m[0].length, ref });
             col += m[0].length;
             i += m[0].length;
             continue;
@@ -526,6 +587,12 @@ export class ClaudeChat {
       i++;
     }
     return { rendered: result, hits };
+  }
+
+  private outputWidth(): number {
+    const w = (this.output.width as number) || 40;
+    const iw = ((this.output as any).iwidth as number) ?? 2;
+    return Math.max(20, w - iw);
   }
 
   private findRefMatch(rel: string, line?: number): FileRef | undefined {
@@ -549,6 +616,15 @@ export class ClaudeChat {
     if (o.scrollbar?.style) o.scrollbar.style.bg = theme.scrollbarBg;
     if (o.scrollbar?.track) o.scrollbar.track.bg = theme.scrollbarTrackBg;
     applyListThemeStyles(this.refsBox as any, theme);
+    this.screen.render();
+  }
+
+  private rewrapAnswer() {
+    const src = this.streamingText || this.lastAnswer;
+    if (!src) return;
+    const { rendered, hits } = this.renderMarkdown(src);
+    this.refHits = hits;
+    this.output.setContent(rendered);
     this.screen.render();
   }
 
@@ -577,4 +653,142 @@ export class ClaudeChat {
     }
     return refs;
   }
+}
+
+// ─── Word-wrap helpers ────────────────────────────────────────────────────
+
+type WTok =
+  | { type: 'ansi'; raw: string; vlen: 0; origCol: number }
+  | { type: 'space'; raw: string; vlen: number; origCol: number }
+  | { type: 'word'; raw: string; vlen: number; origCol: number };
+
+const ANSI_RE = /\x1b\[[\d;]*m/;
+
+function visibleLength(s: string): number {
+  return s.replace(/\x1b\[[\d;]*m/g, '').length;
+}
+
+// Split a rendered (ANSI-laden) line into ansi / whitespace-run / word tokens.
+// origCol is the visible column at which each token *starts* in the original
+// line (ANSI tokens carry their parent's origCol since they don't advance it).
+function tokenizeForWrap(s: string): WTok[] {
+  const tokens: WTok[] = [];
+  let i = 0;
+  let origCol = 0;
+  while (i < s.length) {
+    if (s[i] === '\x1b') {
+      const m = ANSI_RE.exec(s.slice(i));
+      if (m && m.index === 0) {
+        tokens.push({ type: 'ansi', raw: m[0], vlen: 0, origCol });
+        i += m[0].length;
+        continue;
+      }
+    }
+    if (s[i] === ' ' || s[i] === '\t') {
+      let j = i;
+      while (j < s.length && (s[j] === ' ' || s[j] === '\t')) j++;
+      tokens.push({ type: 'space', raw: s.slice(i, j), vlen: j - i, origCol });
+      origCol += j - i;
+      i = j;
+      continue;
+    }
+    let j = i;
+    while (j < s.length && s[j] !== ' ' && s[j] !== '\t' && s[j] !== '\x1b') j++;
+    tokens.push({ type: 'word', raw: s.slice(i, j), vlen: j - i, origCol });
+    origCol += j - i;
+    i = j;
+  }
+  return tokens;
+}
+
+// Word-wrap a single rendered line at `width` visible columns. Continuation
+// rows are prefixed with the line's leading whitespace + the ANSI codes that
+// were active at the wrap point, so styles persist across rows. Per-line
+// hits are remapped to (row, col) within the wrapped output.
+function wrapLine(rendered: string, hits: LineHit[], width: number)
+  : { lines: string[]; hits: { row: number; col: number; length: number; ref: FileRef }[] }
+{
+  if (visibleLength(rendered) <= width) {
+    return {
+      lines: [rendered],
+      hits: hits.map(h => ({ row: 0, col: h.col, length: h.length, ref: h.ref })),
+    };
+  }
+
+  // Strip leading ANSI to find the visible leading whitespace (= continuation
+  // indent). Note: leading indent for the *first* row is already inside
+  // `rendered`; we just re-apply it on subsequent rows.
+  const stripped = rendered.replace(/^(?:\x1b\[[\d;]*m)+/, '');
+  const indentMatch = stripped.match(/^[ \t]*/);
+  const indent = indentMatch ? indentMatch[0] : '';
+
+  const tokens = tokenizeForWrap(rendered);
+  const lines: string[] = [];
+  let cur = '';
+  let curVlen = 0;
+  let activeAnsi = '';
+  let row = 0;
+  // origCol → (row, col) for token starts; lets us remap hits afterwards.
+  const colMap: Array<{ origCol: number; row: number; col: number }> = [];
+
+  for (const tok of tokens) {
+    if (tok.type === 'ansi') {
+      cur += tok.raw;
+      // Reset clears the active style stack; everything else accumulates.
+      if (tok.raw === '\x1b[0m' || tok.raw === '\x1b[m') activeAnsi = '';
+      else activeAnsi += tok.raw;
+      continue;
+    }
+
+    if (curVlen + tok.vlen <= width) {
+      colMap.push({ origCol: tok.origCol, row, col: curVlen });
+      cur += tok.raw;
+      curVlen += tok.vlen;
+      continue;
+    }
+
+    // Doesn't fit on the current row.
+    if (tok.type === 'space') {
+      // Drop the space and start a new row.
+      lines.push(cur);
+      row++;
+      cur = indent + activeAnsi;
+      curVlen = indent.length;
+      continue;
+    }
+
+    // A word that doesn't fit: push it onto a fresh continuation row.
+    lines.push(cur);
+    row++;
+    cur = indent + activeAnsi;
+    curVlen = indent.length;
+    colMap.push({ origCol: tok.origCol, row, col: curVlen });
+    cur += tok.raw;
+    curVlen += tok.vlen;
+  }
+  lines.push(cur);
+
+  // Remap each hit through colMap. We find the LAST token whose origCol <=
+  // hit.col (the token containing the hit's start) and add the hit's offset
+  // within that token. Refs are typically a single word so they don't span
+  // a wrap boundary; if a ref were ever split, only the first row is hit-
+  // testable, which degrades gracefully.
+  const newHits: { row: number; col: number; length: number; ref: FileRef }[] = [];
+  for (const h of hits) {
+    let entry: { origCol: number; row: number; col: number } | null = null;
+    for (const e of colMap) {
+      if (e.origCol > h.col) break;
+      entry = e;
+    }
+    if (!entry) continue;
+    const offset = h.col - entry.origCol;
+    newHits.push({
+      row: entry.row,
+      col: entry.col + offset,
+      length: h.length,
+      ref: h.ref,
+    });
+  }
+
+  return { lines, hits: newHits };
 }
