@@ -36,12 +36,27 @@ export class App {
   constructor(root: string, opts: AppOpts = {}) {
     this.fs = new FileSystem(root);
     this.theme = detectTheme(opts.theme ?? 'auto');
+
+    // Force a modern mouse protocol BEFORE the screen is built. blessed's
+    // program.enableMouse() only emits the enable sequences for a hardcoded
+    // set of TERMs (xterm/screen/rxvt/linux/…) or when terminfo exposes
+    // key_mouse — for anything else it silently does nothing and the mouse
+    // is dead while the keyboard still works. BLESSED_FORCE_MODES bypasses
+    // that detection entirely. SGR mouse (?1006) is understood by every
+    // modern terminal (iTerm2, Terminal.app, tmux, kitty, VS Code…).
+    if (!process.env.BLESSED_FORCE_MODES) {
+      process.env.BLESSED_FORCE_MODES = 'vt200Mouse=1,sgrMouse=1,cellMotion=1,allMotion=1';
+    }
+
     this.screen = blessed.screen({
       smartCSR: true,
       title: 'tcode',
       fullUnicode: true,
       autoPadding: true,
     });
+    // Enable mouse explicitly instead of relying on blessed's lazy enablement
+    // (which only fires when the first mouse-enabled widget is constructed).
+    this.screen.enableMouse();
 
     const w = (this.screen.width as number) || 80;
     this.splitRatio = 0.3;
