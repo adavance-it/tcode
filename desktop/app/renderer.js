@@ -1,0 +1,190 @@
+// tcode-desktop — renderer entry point. Wires the components together, owns
+// the global keybindings, splitter drag and theme/wrap toggles. Port of the
+// orchestration in src/app.ts.
+'use strict';
+
+(function () {
+  const path = require('path');
+  const TC = window.TC;
+
+  // ── Config handed over by the main process via the file:// query string ──
+  const params = new URLSearchParams(location.search);
+  const startDir = params.get('dir') || process.cwd();
+  const initialWrap = params.get('wrap') === 'true';
+  const initialTheme = params.get('theme') === 'light' ? 'light' : 'dark';
+
+  TC.theme.apply(initialTheme);
+
+  const fsys = new TC.FileSystem(startDir);
+  const rootName = path.basename(fsys.root) || fsys.root;
+  document.title = 'tcode — ' + rootName;
+
+  const $ = (id) => document.getElementById(id);
+  const workspace = $('workspace');
+  const treePane = $('tree-pane');
+  const viewerPane = $('viewer-pane');
+  const chatPane = $('chat-pane');
+  const splitTree = $('split-tree');
+  const splitChat = $('split-chat');
+  const overlay = $('overlay');
+
+  // ── Components ──
+  const tree = new TC.FileTree($('tree-body'), treePane, fsys);
+  const viewer = new TC.Viewer($('viewer-body'), viewerPane, { wrap: initialWrap });
+  const palette = new TC.CommandPalette($('palette'), fsys);
+  const chat = new TC.ClaudeChat(chatPane, fsys.root);
+  const git = new TC.GitExplorer($('git'), fsys.root);
+  const status = new TC.StatusBar($('statusbar'));
+
+  status.update({ wrap: initialWrap, theme: initialTheme });
+
+  // ── Wiring ──
+  tree.onOpen = (p) => {
+    viewer.load(p);
+    viewer.focus();
+  };
+
+  viewer.onFileChange = (p) => {
+    status.update({ file: p, selection: viewer.selectionRange() });
+    document.title = 'tcode — ' + (p ? path.basename(p) : rootName);
+  };
+  viewer.onSelectionChange = () => status.update({ selection: viewer.selectionRange() });
+  viewer.onWrapChange = (w) => status.update({ wrap: w });
+
+  palette.onSelect = (p) => {
+    tree.revealFile(p);
+    viewer.load(p);
+    viewer.focus();
+  };
+  palette.onShow = () => overlay.classList.remove('hidden');
+  palette.onHide = () => {
+    overlay.classList.add('hidden');
+    viewer.focus();
+  };
+
+  chat.onOpenFile = (p, line) => {
+    tree.revealFile(p);
+    viewer.load(p, line);
+    viewer.focus();
+  };
+  chat.onShow = () => splitChat.classList.remove('hidden');
+  chat.onHide = () => {
+    splitChat.classList.add('hidden');
+    viewer.focus();
+  };
+  chat.onDefocus = () => viewer.focus();
+
+  git.onOpenFile = (p) => {
+    tree.revealFile(p);
+    viewer.load(p);
+    viewer.focus();
+  };
+  git.onShow = () => overlay.classList.remove('hidden');
+  git.onHide = () => {
+    overlay.classList.add('hidden');
+    viewer.focus();
+  };
+
+  overlay.addEventListener('mousedown', () => {
+    if (palette.visible) palette.hide();
+    else if (git.visible) git.hide();
+  });
+
+  // ── Chat toggle (carries the editor's line selection as context) ──
+  function toggleChat() {
+    if (chat.visible) {
+      chat.hide();
+      return;
+    }
+    const sel = viewer.selectionRange();
+    if (sel && viewer.currentFile) {
+      chat.show({
+        context: { file: viewer.currentFile, range: sel, text: viewer.selectionText() },
+      });
+    } else {
+      chat.show();
+    }
+  }
+
+  // Tab toggles Explorer ↔ Editor (chat owns Tab while it is focused).
+  function switchPane() {
+    const ae = document.activeElement;
+    if (treePane === ae || treePane.contains(ae)) viewer.focus();
+    else tree.focus();
+  }
+
+  function toggleTheme() {
+    status.update({ theme: TC.theme.toggle() });
+  }
+
+  function quit() {
+    window.close();
+  }
+
+  // ── Global keybindings — capture phase, so component handlers never see a
+  //    key that is a global shortcut. ──
+  document.addEventListener(
+    'keydown',
+    (e) => {
+      if (palette.visible || git.visible) return; // an open modal owns the keyboard
+
+      const ae = document.activeElement;
+      const typing =
+        ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable);
+      const inChat = chatPane.contains(ae);
+      const take = () => {
+        e.preventDefault();
+        e.stopPropagation();
+      };
+
+      if (e.ctrlKey && e.key === 'q') { take(); quit(); return; }
+      if (e.ctrlKey && e.key === 'p') { take(); palette.show(); return; }
+      if (e.ctrlKey && e.key === 'a') { take(); toggleChat(); return; }
+      if (e.ctrlKey && e.key === 'g') { take(); git.show(); return; }
+      if (e.ctrlKey) return; // leave every other Ctrl combo (copy, reload…) alone
+
+      if (e.key === 'Tab' && !inChat) { take(); switchPane(); return; }
+
+      if (!typing) {
+        if (e.key === 'd') { take(); toggleTheme(); return; }
+        if (e.key === 'w') { take(); viewer.toggleWrap(); return; }
+        if (e.key === 'q' && (ae === treePane || ae === viewerPane)) { take(); quit(); return; }
+      }
+    },
+    true
+  );
+
+  // ── Splitter drag ──
+  const MIN_PANE = 150;
+
+  function setupSplitter(splitter, onDrag) {
+    splitter.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      document.body.style.cursor = 'col-resize';
+      const move = (ev) => onDrag(ev.clientX);
+      const up = () => {
+        document.body.style.cursor = '';
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', up);
+      };
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+    });
+  }
+
+  setupSplitter(splitTree, (x) => {
+    const ws = workspace.getBoundingClientRect();
+    const chatW = chat.visible ? chatPane.offsetWidth : 0;
+    const max = Math.max(MIN_PANE, ws.width - chatW - MIN_PANE - 20);
+    treePane.style.width = Math.max(MIN_PANE, Math.min(x - ws.left, max)) + 'px';
+  });
+
+  setupSplitter(splitChat, (x) => {
+    const ws = workspace.getBoundingClientRect();
+    const max = Math.max(220, ws.width - treePane.offsetWidth - MIN_PANE - 20);
+    chatPane.style.width = Math.max(220, Math.min(ws.right - x, max)) + 'px';
+  });
+
+  // ── Go ──
+  tree.focus();
+})();

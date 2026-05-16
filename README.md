@@ -1,10 +1,14 @@
 # tcode
 
-A read-only, VS Code–like code explorer that lives in your terminal.
+A read-only, VS Code–like code explorer. Browse a repo with a file tree on the
+left and a syntax-highlighted viewer on the right. Fuzzy-search files, ask
+Claude about the codebase, walk a git log and inspect diffs.
 
-Browse a repo with a file tree on the left and a syntax-highlighted viewer on
-the right. Fuzzy-search files, ask Claude about the codebase, walk a git log
-and inspect diffs — all without leaving the terminal.
+It ships in two editions, same features, same shortcuts:
+
+- **`tcode`** — the terminal (TUI) edition, built on [blessed](https://github.com/chjj/blessed).
+- **`tcode-desktop`** — the desktop edition, an [Electron](https://www.electronjs.org/)
+  window. Launch it straight from the console with `tcode-desktop`.
 
 ## Install
 
@@ -47,6 +51,29 @@ tcode update             # reinstall from the latest main
 tcode --help             # full options list
 ```
 
+## Desktop app
+
+The desktop edition is the same explorer in an Electron window — launched
+directly from the console, exactly like the terminal one:
+
+```bash
+tcode-desktop                 # browse the current directory
+tcode-desktop ~/dev/myrepo    # browse a specific directory
+tcode-desktop --wrap repo/    # start with line wrap on
+tcode-desktop --light         # force light theme (default: auto, follows the OS)
+tcode-desktop update          # reinstall from the latest main
+tcode-desktop --help          # full options list
+```
+
+Every feature of the terminal edition is replicated: the gitignore-aware file
+tree, the syntax-highlighted viewer with line selection, `Ctrl+P` fuzzy search,
+the `Ctrl+A` Claude chat with clickable file refs, the `Ctrl+G` git explorer,
+dark/light themes and drag-to-resize splitters. The shortcuts below apply to
+both editions — the only difference is the desktop edition uses native window
+scrolling and quits with `Ctrl+Q` (so `Ctrl+C` stays free for copy).
+
+`npm run desktop` runs it from a checkout without installing.
+
 ## Shortcuts
 
 ### Navigation
@@ -59,7 +86,7 @@ tcode --help             # full options list
 | `←` / `→` / `h` / `l` | Collapse / expand directory or jump to parent |
 | `g` / `G`       | Top / bottom of file                         |
 | `PgUp` / `PgDn` | Half-page scroll in editor                   |
-| `q` / `Ctrl+C`  | Quit                                         |
+| `q`             | Quit (`Ctrl+C` in `tcode`, `Ctrl+Q` in `tcode-desktop`) |
 
 ### Modals
 
@@ -118,25 +145,41 @@ Auto-detected via `COLORFGBG` (used by most modern terminals). Force with
 git clone https://github.com/adavance-it/tcode.git
 cd tcode
 npm install
-npm run build       # tsc + chmod +x dist/index.js
-npm link            # global symlink for the `tcode` binary
-npm run dev         # tsx-driven run without prebuilding
+npm run build       # tsc + chmod +x dist/index.js  (terminal edition)
+npm link            # global symlinks for `tcode` and `tcode-desktop`
+npm run dev         # tsx-driven run of the terminal edition
+npm run desktop     # run the desktop edition without installing
 ```
 
 Source layout:
 
 ```
-src/
+src/                # terminal edition (TypeScript → dist/ via tsc)
   index.ts      # CLI arg parsing, entry point
   app.ts        # screen orchestration, splitter, key bindings
   filetree.ts   # left panel
-  viewer.ts    # right panel with syntax highlighting + selection
+  viewer.ts     # right panel with syntax highlighting + selection
   palette.ts    # Ctrl+P fuzzy search modal
   claude.ts     # Ctrl+A chat modal
   git.ts        # Ctrl+G git explorer modal
   files.ts      # filesystem walker (.gitignore aware)
   theme.ts      # dark/light themes + auto-detection
+
+desktop/            # desktop edition (Electron, plain JS — no build step)
+  main.js       # Electron main process: window, CLI args, self-update
+  cli.js        # `tcode-desktop` console launcher
+  app/
+    index.html  # window shell
+    styles.css  # dark / light theme tokens + layout
+    renderer.js # orchestration, global keys, splitters
+    lib/        # files / theme / langs / highlighter / markdown
+    components/ # filetree, viewer, palette, chat, gitexplorer, statusbar
 ```
+
+The desktop edition is a straight port of the terminal one — each
+`desktop/app/components/*.js` mirrors the matching `src/*.ts`. It is plain JS
+(no compile step): `tcode-desktop` boots Electron, which loads
+`desktop/app/index.html` directly.
 
 ## License
 

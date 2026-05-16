@@ -1,19 +1,23 @@
 {
   "name": "tcode",
-  "version": "0.1.0",
-  "description": "Read-only VS Code-like terminal explorer with Claude integration",
+  "version": "0.2.0",
+  "description": "Read-only VS Code-like code explorer with Claude integration — terminal (tcode) and desktop (tcode-desktop) editions",
   "bin": {
-    "tcode": "dist/index.js"
+    "tcode": "dist/index.js",
+    "tcode-desktop": "desktop/cli.js"
   },
+  "main": "desktop/main.js",
   "scripts": {
     "build": "tsc && chmod +x dist/index.js",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
+    "desktop": "electron desktop/main.js",
     "prepare": "[ ! -d src ] || npm run build"
   },
   "files": [
     "dist",
     "src",
+    "desktop",
     "tsconfig.json",
     "install.sh"
   ],
@@ -21,7 +25,9 @@
   "dependencies": {
     "blessed": "^0.1.81",
     "cli-highlight": "^2.1.11",
+    "electron": "^32.2.0",
     "fuse.js": "^7.0.0",
+    "highlight.js": "^11.10.0",
     "ignore": "^5.3.1"
   },
   "devDependencies": {

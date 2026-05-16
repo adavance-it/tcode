@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self' file:; script-src 'self' file:;
+                 style-src 'self' file: 'unsafe-inline'; img-src 'self' file: data:;
+                 font-src 'self' file: data:; connect-src 'self' file:" />
+  <title>tcode</title>
+  <link rel="stylesheet" href="styles.css" />
+  <!-- highlight.js theme stylesheet; href is set at runtime by theme.js -->
+  <link id="hljs-theme" rel="stylesheet" href="" />
+</head>
+<body>
+  <div id="app" class="theme-dark wrap-off">
+    <div id="workspace">
+      <!-- Explorer -->
+      <section id="tree-pane" class="pane" tabindex="0" data-pane="tree">
+        <header class="pane-head"><span id="tree-label">explorer</span></header>
+        <div id="tree-body" class="pane-body tree-body"></div>
+      </section>
+
+      <div id="split-tree" class="splitter" title="Drag to resize"></div>
+
+      <!-- Editor -->
+      <section id="viewer-pane" class="pane" tabindex="0" data-pane="viewer">
+        <header class="pane-head"><span id="viewer-label">Editor</span></header>
+        <div id="viewer-body" class="pane-body"></div>
+      </section>
+
+      <div id="split-chat" class="splitter hidden" title="Drag to resize"></div>
+
+      <!-- Claude chat (built by chat.js) -->
+      <section id="chat-pane" class="pane chat-pane hidden" data-pane="chat"></section>
+    </div>
+
+    <footer id="statusbar"></footer>
+  </div>
+
+  <!-- Modal scrim + modals (filled by their components) -->
+  <div id="overlay" class="overlay hidden"></div>
+  <div id="palette" class="modal palette-modal hidden"></div>
+  <div id="git" class="modal git-modal hidden"></div>
+
+  <script src="lib/theme.js"></script>
+  <script src="lib/langs.js"></script>
+  <script src="lib/files.js"></script>
+  <script src="lib/highlighter.js"></script>
+  <script src="lib/markdown.js"></script>
+  <script src="components/filetree.js"></script>
+  <script src="components/viewer.js"></script>
+  <script src="components/palette.js"></script>
+  <script src="components/chat.js"></script>
+  <script src="components/gitexplorer.js"></script>
+  <script src="components/statusbar.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
