@@ -1,14 +1,16 @@
 // Editor pane — read-only, syntax-highlighted file viewer with a line-number
 // gutter and a line-range selection. Port of src/viewer.ts.
 //
-// Selection: click / drag on the line-number gutter selects whole lines (the
-// range Ctrl+A sends to Claude as context); Shift+↑/↓ extends it from the
-// keyboard. The code column keeps native text selection for copy/paste.
+// Selection is line-based (like the terminal edition): click a line to select
+// it, drag across the code to select a block, Shift+↑/↓ to extend. The
+// selection is what Ctrl/Cmd+A sends to Claude as context, and Ctrl/Cmd+C
+// copies the selected lines to the clipboard.
 'use strict';
 
 (function () {
   const fs = require('fs');
   const path = require('path');
+  const { clipboard } = require('electron');
   const TC = (window.TC = window.TC || {});
 
   const MAX_FILE_BYTES = 2 * 1024 * 1024;
@@ -18,22 +20,6 @@
     for (let i = 0; i < len; i++) if (buf[i] === 0) return true;
     return false;
   }
-
-  const WELCOME = `<div class="welcome"><h1>tcode — read-only code explorer</h1>` +
-    `Pick a file in the Explorer (Enter) to view its content.\n\n` +
-    `Shortcuts:\n` +
-    `  <span class="key">Tab</span>            switch Explorer / Editor / Claude\n` +
-    `  <span class="key">Enter</span>          open file / toggle directory\n` +
-    `  <span class="key">Ctrl+P</span>         fuzzy file search\n` +
-    `  <span class="key">Ctrl+A</span>         toggle Claude side panel\n` +
-    `  <span class="key">Ctrl+G</span>         git explorer (commits + files + diff)\n` +
-    `  <span class="key">j / k  ↑ / ↓</span>   scroll\n` +
-    `  <span class="key">g / G</span>          top / bottom of file\n` +
-    `  <span class="key">Shift+↑/↓</span>      extend line selection\n` +
-    `  <span class="key">click gutter</span>   select a line (drag for a range)\n` +
-    `  <span class="key">w</span>              toggle line wrap\n` +
-    `  <span class="key">d</span>              toggle dark / light theme\n` +
-    `  <span class="key">Ctrl+Q</span>         quit</div>`;
 
   class Viewer {
     constructor(bodyEl, paneEl, opts) {
@@ -53,12 +39,13 @@
       this.onSelectionChange = () => {};
       this.onWrapChange = () => {};
 
-      this.body.innerHTML = WELCOME;
+      this.body.innerHTML = this._welcomeHtml();
       this.pane.addEventListener('keydown', (e) => this.handleKey(e));
 
-      // Line-range selection from the gutter.
+      // Line-range selection: click / drag anywhere over the code.
       this.body.addEventListener('mousedown', (e) => {
-        const ln = this._lineFromEvent(e, true);
+        if (e.button !== 0) return;
+        const ln = this._lineAt(e);
         if (ln == null) return;
         e.preventDefault();
         this.pane.focus();
@@ -74,7 +61,7 @@
       });
       document.addEventListener('mousemove', (e) => {
         if (!this.dragging) return;
-        const ln = this._lineFromEvent(e, false);
+        const ln = this._lineAt(e);
         if (ln == null || ln === this.selActive) return;
         this.selActive = ln;
         this._applySelection();
@@ -87,22 +74,45 @@
       this.setWrap(!!opts.wrap, true);
     }
 
-    // Map a mouse event to a 1-based line number. `gutterOnly` requires the
-    // pointer to be over the line-number column (a selection gesture).
-    _lineFromEvent(e, gutterOnly) {
+    _welcomeHtml() {
+      const c = TC.platform.combo;
+      const rows = [
+        ['Tab', 'Switch Explorer / Editor / Claude'],
+        ['Enter', 'Open file / toggle directory'],
+        [c('P'), 'Fuzzy file search'],
+        [c('A'), 'Ask Claude about the codebase'],
+        [c('G'), 'Git explorer — commits, files, diffs'],
+        ['j k ↑ ↓', 'Scroll · g / G jump to top / bottom'],
+        ['drag', 'Select a block of lines · Shift+↑/↓ extends'],
+        [c('C'), 'Copy the selected lines'],
+        ['w', 'Toggle line wrap · d toggle theme'],
+        [c('Q'), 'Quit'],
+      ];
+      const keyRows = rows
+        .map(
+          ([k, d]) =>
+            `<div class="wk"><kbd>${TC.escapeHtml(k)}</kbd><span>${TC.escapeHtml(d)}</span></div>`
+        )
+        .join('');
+      return (
+        '<div class="welcome"><div class="welcome-card">' +
+        '<h1>tcode</h1>' +
+        '<p class="welcome-sub">A read-only code explorer. ' +
+        'Pick a file in the Explorer to view it.</p>' +
+        `<div class="welcome-keys">${keyRows}</div>` +
+        '</div></div>'
+      );
+    }
+
+    // Map a mouse event to a 1-based line number.
+    _lineAt(e) {
       let el = e.target;
-      if (gutterOnly) {
-        if (!el || !el.classList || !el.classList.contains('lnum')) return null;
-      }
-      const vline = el && el.closest ? el.closest('.vline') : null;
+      let vline = el && el.closest ? el.closest('.vline') : null;
       if (!vline) {
-        // During a drag the pointer can be between rows — resolve by point.
         const hit = document.elementFromPoint(e.clientX, e.clientY);
-        const vl = hit && hit.closest ? hit.closest('.vline') : null;
-        if (!vl) return null;
-        return parseInt(vl.dataset.ln, 10);
+        vline = hit && hit.closest ? hit.closest('.vline') : null;
       }
-      return parseInt(vline.dataset.ln, 10);
+      return vline ? parseInt(vline.dataset.ln, 10) : null;
     }
 
     load(filePath, line) {
@@ -235,10 +245,21 @@
       this.body.scrollTop = Math.max(0, el.offsetTop - this.body.clientHeight / 3);
     }
 
+    _copySelection() {
+      const text = this.selectionText();
+      if (!text) return;
+      try {
+        clipboard.writeText(text);
+      } catch {
+        /* clipboard unavailable — nothing to do */
+      }
+    }
+
     setWrap(on, silent) {
       this.wrap = !!on;
-      document.getElementById('app').classList.toggle('wrap-on', this.wrap);
-      document.getElementById('app').classList.toggle('wrap-off', !this.wrap);
+      const app = document.getElementById('app');
+      app.classList.toggle('wrap-on', this.wrap);
+      app.classList.toggle('wrap-off', !this.wrap);
       if (!silent) this.onWrapChange(this.wrap);
     }
 
@@ -248,9 +269,17 @@
 
     handleKey(e) {
       const k = e.key;
+      const mod = TC.platform.mod(e);
       const lh = this._lineHeight();
       const half = Math.max(1, Math.floor(this.body.clientHeight / lh / 2));
-      if ((k === 'ArrowDown' && e.shiftKey) || k === 'J') {
+
+      if (mod && (k === 'c' || k === 'C')) {
+        this._copySelection();
+      } else if (mod) {
+        if (k === 'd') this.body.scrollTop += half * lh;
+        else if (k === 'u') this.body.scrollTop -= half * lh;
+        else return;
+      } else if ((k === 'ArrowDown' && e.shiftKey) || k === 'J') {
         this.extendSelection(1);
       } else if ((k === 'ArrowUp' && e.shiftKey) || k === 'K') {
         this.extendSelection(-1);
@@ -262,9 +291,9 @@
         this.body.scrollTop = 0;
       } else if (k === 'G') {
         this.body.scrollTop = this.body.scrollHeight;
-      } else if (k === 'PageDown' || (e.ctrlKey && k === 'd')) {
+      } else if (k === 'PageDown') {
         this.body.scrollTop += half * lh;
-      } else if (k === 'PageUp' || (e.ctrlKey && k === 'u')) {
+      } else if (k === 'PageUp') {
         this.body.scrollTop -= half * lh;
       } else if (k === 'Escape') {
         this.clearSelection();

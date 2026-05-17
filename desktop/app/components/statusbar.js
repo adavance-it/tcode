@@ -19,20 +19,19 @@
     render() {
       const s = this.state;
       const esc = TC.escapeHtml;
-      let left = s.file ? esc(s.file) : 'tcode';
+      const combo = TC.platform.combo;
+      let left = s.file ? esc(s.file) : 'No file open';
       if (s.selection) {
-        left += ` <span class="sb-tag">sel ${s.selection[0]}–${s.selection[1]}</span>`;
+        const n = s.selection[1] - s.selection[0] + 1;
+        left += ` <span class="sb-tag">${n} line${n === 1 ? '' : 's'} selected · ` +
+          `${s.selection[0]}–${s.selection[1]}</span>`;
       }
       const right =
-        `<span class="sb-tag">${s.theme}</span>` +
-        `<span class="sb-tag">${s.wrap ? 'wrap' : 'no-wrap'}</span>` +
-        'Tab<span class="sb-sep">·</span>' +
-        '^P search<span class="sb-sep">·</span>' +
-        '^A claude<span class="sb-sep">·</span>' +
-        '^G git<span class="sb-sep">·</span>' +
-        'w wrap<span class="sb-sep">·</span>' +
-        'd theme<span class="sb-sep">·</span>' +
-        '^Q quit';
+        `<span class="sb-tag">${esc(s.theme)}</span>` +
+        `<span class="sb-tag">${s.wrap ? 'wrap' : 'no wrap'}</span>` +
+        `${esc(combo('P'))} Search<span class="sb-sep">·</span>` +
+        `${esc(combo('A'))} Claude<span class="sb-sep">·</span>` +
+        `${esc(combo('G'))} Git`;
       this.el.innerHTML =
         `<span class="sb-left">${left}</span><span class="sb-right">${right}</span>`;
     }

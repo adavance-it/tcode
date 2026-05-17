@@ -66,11 +66,16 @@ tcode-desktop --help          # full options list
 ```
 
 Every feature of the terminal edition is replicated: the gitignore-aware file
-tree, the syntax-highlighted viewer with line selection, `Ctrl+P` fuzzy search,
-the `Ctrl+A` Claude chat with clickable file refs, the `Ctrl+G` git explorer,
-dark/light themes and drag-to-resize splitters. The shortcuts below apply to
-both editions — the only difference is the desktop edition uses native window
-scrolling and quits with `Ctrl+Q` (so `Ctrl+C` stays free for copy).
+tree, the syntax-highlighted viewer with line selection, fuzzy search, the
+Claude chat (answer streams in token-by-token) with clickable file refs, the
+git explorer, dark/light themes and drag-to-resize splitters.
+
+The shortcuts below apply to both editions, with two desktop differences:
+
+- On **macOS** the modifier is **⌘** (`⌘P`, `⌘A`, `⌘G`, `⌘Q`…); on Linux /
+  Windows it stays **Ctrl**.
+- `⌘`/`Ctrl+C` copies the selected lines, and quit is `⌘`/`Ctrl+Q` — so the
+  OS copy shortcut is never shadowed.
 
 `npm run desktop` runs it from a checkout without installing.
 

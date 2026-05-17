@@ -10,12 +10,17 @@
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 
+// In-app shortcuts use the OS-primary modifier: Cmd on macOS, Ctrl elsewhere.
+const K = (process.platform === 'darwin')
+  ? (k) => '⌘' + k
+  : (k) => 'Ctrl+' + k;
+
 const HELP = `Usage: tcode-desktop [options] [path]
        tcode-desktop update          reinstall tcode from the latest main
 
 Opens the tcode code explorer as a desktop window. Same features as the
-terminal \`tcode\`: file tree, syntax-highlighted viewer, Ctrl+P fuzzy search,
-Ctrl+A Claude chat, Ctrl+G git explorer.
+terminal \`tcode\`: file tree, syntax-highlighted viewer, ${K('P')} fuzzy search,
+${K('A')} Claude chat, ${K('G')} git explorer.
 
 Options:
   --no-wrap          long lines scroll horizontally instead of wrapping (default)
@@ -26,15 +31,16 @@ Options:
 
 In-app shortcuts:
   Tab          switch panes (Explorer / Editor / Claude)
-  Ctrl+P       fuzzy file search
-  Ctrl+A       toggle Claude side panel
-  Ctrl+G       git explorer (commits + files + diff)
-  Ctrl+N       (in chat) new conversation
+  ${K('P')}       fuzzy file search
+  ${K('A')}       toggle Claude side panel
+  ${K('G')}       git explorer (commits + files + diff)
+  ${K('N')}       (in chat) new conversation
+  ${K('C')}       copy the selected lines in the editor
   Shift+↑/↓    extend line selection in editor
   d            toggle dark / light theme
   w            toggle line wrap
   Esc          close modal / clear selection
-  Ctrl+Q       quit
+  ${K('Q')}       quit
 `;
 
 // The canonical install one-liner (kept in sync with README / install.sh).

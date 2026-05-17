@@ -16,7 +16,7 @@
     <div id="workspace">
       <!-- Explorer -->
       <section id="tree-pane" class="pane" tabindex="0" data-pane="tree">
-        <header class="pane-head"><span id="tree-label">explorer</span></header>
+        <header class="pane-head"><span id="tree-label">Explorer</span></header>
         <div id="tree-body" class="pane-body tree-body"></div>
       </section>
 
@@ -35,13 +35,15 @@
     </div>
 
     <footer id="statusbar"></footer>
+
+    <!-- Modal scrim + modals. Kept inside #app so they inherit the theme
+         custom properties; position:fixed still anchors them to the viewport. -->
+    <div id="overlay" class="overlay hidden"></div>
+    <div id="palette" class="modal palette-modal hidden"></div>
+    <div id="git" class="modal git-modal hidden"></div>
   </div>
 
-  <!-- Modal scrim + modals (filled by their components) -->
-  <div id="overlay" class="overlay hidden"></div>
-  <div id="palette" class="modal palette-modal hidden"></div>
-  <div id="git" class="modal git-modal hidden"></div>
-
+  <script src="lib/platform.js"></script>
   <script src="lib/theme.js"></script>
   <script src="lib/langs.js"></script>
   <script src="lib/files.js"></script>

@@ -137,11 +137,14 @@
         e.stopPropagation();
       };
 
-      if (e.ctrlKey && e.key === 'q') { take(); quit(); return; }
-      if (e.ctrlKey && e.key === 'p') { take(); palette.show(); return; }
-      if (e.ctrlKey && e.key === 'a') { take(); toggleChat(); return; }
-      if (e.ctrlKey && e.key === 'g') { take(); git.show(); return; }
-      if (e.ctrlKey) return; // leave every other Ctrl combo (copy, reload…) alone
+      const mod = TC.platform.mod(e);
+      if (mod && e.key === 'q') { take(); quit(); return; }
+      if (mod && e.key === 'p') { take(); palette.show(); return; }
+      if (mod && e.key === 'a') { take(); toggleChat(); return; }
+      if (mod && e.key === 'g') { take(); git.show(); return; }
+      // Leave every other modifier combo alone (copy, reload, the editor's
+      // own Cmd/Ctrl+C handler, …).
+      if (e.ctrlKey || e.metaKey) return;
 
       if (e.key === 'Tab' && !inChat) { take(); switchPane(); return; }
 
