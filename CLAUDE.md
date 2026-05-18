@@ -44,12 +44,13 @@ handles its own keys on its own elements.
 
 tcode operates on a single root directory. `renderer.js` owns `setRoot()`,
 which builds a fresh `FileSystem` and re-scopes every component (tree, palette,
-chat, git) at the new directory. Triggers: `⌘Enter` / `⌘`+double-click on a
-folder (`FileTree.onChangeRoot`), `⌥Enter` for a quick-pick of the folders at
-the selected item's level (`components/folderpick.js`), `⌘Backspace` to the
-parent. Re-rooting into a git repo runs `git pull --ff-only` in the background
-(`pullIfRepo`). `⌘⇧C` opens the clone dialog (`components/clone.js`), which
-always clones over SSH so it uses the user's personal key.
+chat, git) at the new directory. Triggers: `⌘Enter` opens a quick-pick of the
+folders at the selected item's level (`components/folderpick.js`);
+`⌘`+double-click on a folder re-roots into it directly (`FileTree.onChangeRoot`);
+`⌘Backspace` goes to the parent. Re-rooting into a git repo runs
+`git pull --ff-only` in the background (`pullIfRepo`). `⌘⇧C` opens the clone
+dialog (`components/clone.js`), which clones over SSH and then re-roots into
+the new checkout.
 
 ## Packaging the macOS app
 

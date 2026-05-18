@@ -107,8 +107,8 @@
     tree.focus();
   };
   clone.onCloned = (clonedPath) => {
-    tree.revealFile(clonedPath); // also rebuilds the tree so the new folder shows
-    palette.invalidate();
+    // Navigate straight into the freshly cloned repo.
+    setRoot(clonedPath);
     status.flash('Cloned ' + path.basename(clonedPath));
   };
 
@@ -220,15 +220,14 @@
         e.preventDefault();
         e.stopPropagation();
       };
-      // Alt/Option+Enter — pick a folder at the highlighted item's level.
-      if (e.altKey && e.key === 'Enter') {
+      const mod = TC.platform.mod(e);
+
+      // Cmd/Ctrl+Enter — pick a folder at the highlighted item's level.
+      if (mod && e.key === 'Enter') {
         take();
         folderpick.show(tree.currentLevelDir());
         return;
       }
-
-      const mod = TC.platform.mod(e);
-
       if (mod && e.shiftKey && (e.key === 'c' || e.key === 'C')) {
         take();
         clone.show(fsys.root);

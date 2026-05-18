@@ -1,7 +1,6 @@
 // Explorer pane — a flattened, expand/collapse file tree. The mouse wheel
 // scrolls the viewport only; the selection moves on keyboard nav or a click.
-// Cmd/Ctrl+Enter (or Cmd/Ctrl+double-click) on a folder makes it the new
-// project root.
+// Cmd/Ctrl+double-click on a folder makes it the new project root.
 'use strict';
 
 (function () {
@@ -138,13 +137,6 @@
 
     handleKey(e) {
       const k = e.key;
-      // Cmd/Ctrl+Enter on a folder makes it the new project root.
-      if (TC.platform.mod(e) && k === 'Enter') {
-        const it = this.items[this.selected];
-        if (it && it.isDirectory) this.onChangeRoot(it.path);
-        e.preventDefault();
-        return;
-      }
       if (k === 'ArrowDown' || k === 'j') {
         this.setSelected(this.selected + 1);
       } else if (k === 'ArrowUp' || k === 'k') {

@@ -29,9 +29,5 @@
     comboShift(key) {
       return isMac ? '⌘⇧' + key : 'Ctrl+Shift+' + key;
     },
-    // The Alt/Option combo: "⌥Enter" on mac, "Alt+Enter" elsewhere.
-    comboAlt(key) {
-      return isMac ? '⌥' + key : 'Alt+' + key;
-    },
   };
 })();

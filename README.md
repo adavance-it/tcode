@@ -80,10 +80,10 @@ below.
 
 | Key                          | Action                                          |
 | ----------------------------- | ----------------------------------------------- |
-| `⌘Enter` / `⌘`+double-click   | Open the selected folder as the project root    |
-| `⌥Enter` (Alt+Enter)          | Pick a folder at the current level, then open it |
+| `⌘Enter`                      | Pick a folder at the current level, then open it as the root |
+| `⌘`+double-click a folder     | Open that folder directly as the project root   |
 | `⌘Backspace`                  | Step up to the parent folder                    |
-| `⌘⇧C`                         | Clone a GitHub repo (over SSH) into the current folder |
+| `⌘⇧C`                         | Clone a GitHub repo (over SSH) and open it       |
 
 Re-rooting into a git repository runs `git pull --ff-only` in the background.
 
@@ -114,11 +114,10 @@ Drag the column between panes with the mouse to resize them.
 tcode always works on a single root directory — the "home". Beyond launching
 with a path, you change it from inside the window:
 
-- **`⌘Enter`** on a folder in the Explorer (or **`⌘`+double-click** it) makes
-  that folder the new root. The whole app — tree, search, git, Claude — re-scopes
-  to it.
-- **`⌥Enter`** (Alt+Enter) opens a quick-pick of the folders at the highlighted
-  item's level — type a name and pick one to open it as the root.
+- **`⌘Enter`** opens a quick-pick of the folders at the highlighted item's
+  level — type a name and pick one to open it as the new root. The whole app —
+  tree, search, git, Claude — re-scopes to it.
+- **`⌘`+double-click** a folder opens it directly as the root.
 - **`⌘Backspace`** steps the root up to the parent folder.
 - Whenever you re-root into a git repository, tcode pulls the latest in the
   background and refreshes the tree.
@@ -127,7 +126,7 @@ with a path, you change it from inside the window:
 
 `⌘⇧C` opens a small dialog. Type a GitHub `owner/repo` (or a git URL) and tcode
 runs `git clone` **over SSH** — using your personal SSH key — into the current
-root folder, then reveals the new checkout in the tree.
+root folder, then opens the new checkout as the root.
 
 ## Claude integration
 
