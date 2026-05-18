@@ -3,11 +3,11 @@
 # run-desktop.sh — launch the tcode desktop app.
 #
 # First run installs dependencies (downloads Electron); after that it just
-# opens the window. All arguments are forwarded to tcode-desktop, e.g.
+# opens the window. All arguments are forwarded to the app, e.g.
 #
 #   ./run-desktop.sh                 # browse the current directory
 #   ./run-desktop.sh ~/dev/myrepo    # browse a specific directory
-#   ./run-desktop.sh --light repo/   # forward any tcode-desktop flag
+#   ./run-desktop.sh --light repo/   # forward any tcode flag
 #
 set -euo pipefail
 

@@ -1,14 +1,13 @@
 # tcode
 
-A read-only, VS Code–like code explorer. Browse a repo with a file tree on the
-left and a syntax-highlighted viewer on the right. Fuzzy-search files, ask
-Claude about the codebase, walk a git log and inspect diffs.
+A read-only, VS Code–like code explorer — a desktop app built on
+[Electron](https://www.electronjs.org/).
 
-It ships in two editions, same features, same shortcuts:
-
-- **`tcode`** — the terminal (TUI) edition, built on [blessed](https://github.com/chjj/blessed).
-- **`tcode-desktop`** — the desktop edition, an [Electron](https://www.electronjs.org/)
-  window. Launch it straight from the console with `tcode-desktop`.
+Browse a repo with a file tree on the left and a syntax-highlighted viewer on
+the right. Fuzzy-search files, ask Claude about the codebase (answers stream in
+token-by-token), walk a git log and inspect diffs. Jump between projects
+without leaving the window: open any folder as the root, clone a repo, or step
+up to the parent.
 
 ## Install
 
@@ -16,152 +15,139 @@ It ships in two editions, same features, same shortcuts:
 curl -fsSL https://raw.githubusercontent.com/adavance-it/tcode/main/install.sh | bash
 ```
 
-The installer clones the repo to `~/dev/tcode`, builds it, and links
-`tcode` on your `PATH`. It's idempotent: re-running updates an existing
-checkout. Override the destination with `TCODE_DIR=/somewhere/else`.
+The installer clones the repo to `~/dev/tcode`, installs dependencies
+(downloads Electron the first time) and links `tcode` on your `PATH`. It's
+idempotent — re-running updates an existing checkout. Override the destination
+with `TCODE_DIR=/somewhere/else`.
 
-Once installed, update in place with:
+Update in place with `tcode update` (re-runs the install one-liner). tcode also
+kicks off a background `git pull` on every launch, so it stays current on its
+own.
 
-```bash
-tcode update
-```
-
-`tcode update` just re-runs the install one-liner above (pull + build +
-link). tcode also kicks off a background `git pull` + rebuild on every
-launch, so it stays current on its own — `tcode update` is the explicit,
-synchronous way to do it now.
-
-Alternative one-liner via npm (uses the package's `prepare` script):
-
-```bash
-npm install -g github:adavance-it/tcode
-```
-
-Requirements: `git`, `node` ≥ 18, `npm`. Claude integration also expects the
-[Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI on `PATH`.
+Requirements: `git`, `node` ≥ 18, `npm`. The Claude chat additionally expects
+the [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI on
+`PATH`.
 
 ## Usage
 
 ```bash
-tcode                    # browse the current directory
-tcode ~/dev/myrepo       # browse a specific directory
-tcode --no-wrap repo/    # start with line wrap off
-tcode --light            # force light theme (default: auto via $COLORFGBG)
+tcode                    # open the current directory in a window
+tcode ~/dev/myrepo       # open a specific directory
+tcode --wrap repo/       # start with line wrap on
+tcode --light            # force light theme (default: auto, follows the OS)
 tcode update             # reinstall from the latest main
 tcode --help             # full options list
 ```
 
-## Desktop app
+Launched from a terminal, `tcode` detaches from it — close the terminal and the
+window keeps running.
 
-The desktop edition is the same explorer in an Electron window — launched
-directly from the console, exactly like the terminal one:
-
-```bash
-tcode-desktop                 # browse the current directory
-tcode-desktop ~/dev/myrepo    # browse a specific directory
-tcode-desktop --wrap repo/    # start with line wrap on
-tcode-desktop --light         # force light theme (default: auto, follows the OS)
-tcode-desktop update          # reinstall from the latest main
-tcode-desktop --help          # full options list
-```
-
-Every feature of the terminal edition is replicated: the gitignore-aware file
-tree, the syntax-highlighted viewer with line selection, fuzzy search, the
-Claude chat (answer streams in token-by-token) with clickable file refs, the
-git explorer, dark/light themes and drag-to-resize splitters.
-
-The shortcuts below apply to both editions, with two desktop differences:
-
-- On **macOS** the modifier is **⌘** (`⌘P`, `⌘A`, `⌘G`, `⌘Q`…); on Linux /
-  Windows it stays **Ctrl**.
-- `⌘`/`Ctrl+C` copies the selected lines, and quit is `⌘`/`Ctrl+Q` — so the
-  OS copy shortcut is never shadowed.
-
-`npm run desktop` runs it from a checkout without installing.
-
-### Install it as a macOS app
+## Install it as a macOS app
 
 To get a real `tcode.app` you can drop in **Applications** (Dock icon and
 all), build it on a Mac from a checkout:
 
 ```bash
+cd ~/dev/tcode
 npm install
 npm run package:mac      # → dist-desktop/tcode-<version>-<arch>.dmg + .zip
 ```
 
 Open the `.dmg` and drag **tcode** to Applications. Launched from Finder the
 app has no path argument, so it opens a folder picker (it remembers the last
-folder you opened). The `tcode-desktop` terminal command keeps working
-alongside the app.
-
-The build is unsigned, so the first launch needs a right-click → **Open** (or
-`xattr -dr com.apple.quarantine /Applications/tcode.app`). `npm run
-package:mac:dir` produces just the unpacked `.app` without the installer.
+folder you opened). The build is unsigned, so the first launch needs a
+right-click → **Open** (or `xattr -dr com.apple.quarantine
+/Applications/tcode.app`).
 
 ## Shortcuts
+
+The modifier is **⌘** on macOS and **Ctrl** on Linux / Windows — written `⌘`
+below.
 
 ### Navigation
 
 | Key             | Action                                       |
 | --------------- | -------------------------------------------- |
 | `Tab`           | Switch focus between Explorer and Editor     |
-| `↑` / `↓` / `j` / `k` | Move cursor                            |
+| `↑` `↓` `j` `k` | Move cursor / scroll                         |
 | `Enter`         | Open file / toggle directory                 |
-| `←` / `→` / `h` / `l` | Collapse / expand directory or jump to parent |
+| `←` `→` `h` `l` | Collapse / expand directory or jump to parent |
 | `g` / `G`       | Top / bottom of file                         |
-| `PgUp` / `PgDn` | Half-page scroll in editor                   |
-| `q`             | Quit (`Ctrl+C` in `tcode`, `Ctrl+Q` in `tcode-desktop`) |
+| `PgUp` `PgDn`   | Half-page scroll in the editor               |
+| `⌘Q`            | Quit                                         |
 
-### Modals
+### Project root ("home")
 
-| Key       | Action                                                 |
-| --------- | ------------------------------------------------------ |
-| `Ctrl+P`  | Fuzzy file search                                      |
-| `Ctrl+A`  | Ask Claude about the codebase (uses selection as context) |
-| `Ctrl+G`  | Git explorer (commit log + diff)                       |
-| `Ctrl+N`  | (inside Claude chat) Start a new conversation          |
-| `Esc`     | Close modal / clear selection                          |
+| Key                          | Action                                          |
+| ----------------------------- | ----------------------------------------------- |
+| `⌘Enter` / `⌘`+double-click   | Open the selected folder as the project root    |
+| `⌘Backspace`                  | Step up to the parent folder                    |
+| `⌘⇧C`                         | Clone a GitHub repo into the current folder     |
+
+Re-rooting into a git repository runs `git pull --ff-only` in the background.
+
+### Modals & panels
+
+| Key       | Action                                                    |
+| --------- | --------------------------------------------------------- |
+| `⌘P`      | Fuzzy file search                                         |
+| `⌘A`      | Toggle the Claude side panel (uses the selection as context) |
+| `⌘G`      | Git explorer (commit log + diff)                          |
+| `⌘N`      | (inside Claude chat) start a new conversation             |
+| `Esc`     | Close modal / clear selection                             |
 
 ### Editor
 
 | Key             | Action                                       |
 | --------------- | -------------------------------------------- |
-| `Shift+↑/↓`     | Extend line selection                        |
-| `Shift+J/K`     | Extend line selection (vim-style)            |
-| Click           | Set selection anchor                         |
-| `Shift+click`   | Extend selection to clicked line             |
+| Click / drag    | Select a line / a block of lines             |
+| `Shift+↑/↓`     | Extend the line selection                    |
+| `⌘C`            | Copy the selected lines                      |
 | `w`             | Toggle line wrap                             |
+| `d`             | Toggle dark / light theme                    |
 
-### Layout
+Drag the column between panes with the mouse to resize them.
 
-Drag the column between the panes with the mouse to resize them.
+## Project navigation
+
+tcode always works on a single root directory — the "home". Beyond launching
+with a path, you change it from inside the window:
+
+- **`⌘Enter`** on a folder in the Explorer (or **`⌘`+double-click** it) makes
+  that folder the new root. The whole app — tree, search, git, Claude — re-scopes
+  to it.
+- **`⌘Backspace`** steps the root up to the parent folder.
+- Whenever you re-root into a git repository, tcode pulls the latest in the
+  background and refreshes the tree.
+
+## Cloning repos
+
+`⌘⇧C` opens a small dialog. Type a GitHub `owner/repo` (or a full git URL) and
+tcode runs `git clone` into the current root folder, then reveals the new
+checkout in the tree.
 
 ## Claude integration
 
-Press `Ctrl+A` and type a question. tcode runs `claude -p <prompt>` in the
-project directory. The answer is parsed for file references shaped like
-`path/to/file.ts:42`; those become a navigable list in the bottom of the
-modal. Pressing `Enter` on a reference opens the file at that line, and the
-referenced line is visually highlighted in the editor.
+Press `⌘A` and type a question. tcode runs `claude -p` in the project directory
+with streaming output, so the answer renders token-by-token. File references
+shaped like `path/to/file.ts:42` become clickable links — in the answer and in
+the Refs list — that jump the editor to that exact line and highlight it.
 
-The conversation persists across `Ctrl+A` opens, so you can jump to a file,
-read it, then `Ctrl+A` again to return to the same answer. `Ctrl+N` starts a
-new question.
-
-If there's an active selection in the editor when you press `Ctrl+A`, those
-lines are sent as context with your question.
+The conversation persists across `⌘A` toggles; `⌘N` starts a new one. If there
+is an active line selection in the editor when you press `⌘A`, those lines are
+sent as context.
 
 ## Git explorer
 
-`Ctrl+G` opens a two-pane modal: a list of recent commits on the left, the
-diff for the selected commit on the right. Press `Enter` on a commit to load
-its diff, `o` to jump to the first file touched by that commit, `Tab` to move
-focus between the panes, `Esc` to close.
+`⌘G` opens a two-pane modal: recent commits on the left, the diff on the right.
+A synthetic "Uncommitted changes" entry shows the working tree. `Enter` on a
+commit lists its files; `Enter` on a file opens it in the editor; `o` jumps
+straight to the first file touched; `Tab` moves between panes; `Esc` closes.
 
 ## Theme
 
-Auto-detected via `COLORFGBG` (used by most modern terminals). Force with
-`--theme=dark` / `--theme=light` (or `--dark` / `--light`).
+Auto-detected from the OS at launch; force with `--theme=dark` / `--theme=light`
+(or `--dark` / `--light`). Toggle live with `d`.
 
 ## Development
 
@@ -169,41 +155,27 @@ Auto-detected via `COLORFGBG` (used by most modern terminals). Force with
 git clone https://github.com/adavance-it/tcode.git
 cd tcode
 npm install
-npm run build       # tsc + chmod +x dist/index.js  (terminal edition)
-npm link            # global symlinks for `tcode` and `tcode-desktop`
-npm run dev         # tsx-driven run of the terminal edition
-npm run desktop     # run the desktop edition without installing
+npm start            # run the app (electron desktop/main.js)
+./run-desktop.sh     # run from a checkout, installing deps on first run
+npm run package:mac  # build the macOS .app/.dmg (on macOS)
 ```
 
-Source layout:
+The app is plain JS — no build step. `desktop/cli.js` boots Electron, which
+loads `desktop/app/index.html`.
 
 ```
-src/                # terminal edition (TypeScript → dist/ via tsc)
-  index.ts      # CLI arg parsing, entry point
-  app.ts        # screen orchestration, splitter, key bindings
-  filetree.ts   # left panel
-  viewer.ts     # right panel with syntax highlighting + selection
-  palette.ts    # Ctrl+P fuzzy search modal
-  claude.ts     # Ctrl+A chat modal
-  git.ts        # Ctrl+G git explorer modal
-  files.ts      # filesystem walker (.gitignore aware)
-  theme.ts      # dark/light themes + auto-detection
-
-desktop/            # desktop edition (Electron, plain JS — no build step)
-  main.js       # Electron main process: window, CLI args, self-update
-  cli.js        # `tcode-desktop` console launcher
+desktop/
+  main.js       # Electron main: window, CLI args, folder picker, self-update
+  cli.js        # `tcode` console launcher
   app/
     index.html  # window shell
     styles.css  # dark / light theme tokens + layout
-    renderer.js # orchestration, global keys, splitters
-    lib/        # files / theme / langs / highlighter / markdown
-    components/ # filetree, viewer, palette, chat, gitexplorer, statusbar
+    renderer.js # orchestration, global keys, splitters, root navigation
+    lib/        # platform, theme, langs, files, highlighter, markdown
+    components/ # filetree, viewer, palette, chat, gitexplorer, clone, statusbar
+build/
+  icon.svg / icon.png   # macOS app icon
 ```
-
-The desktop edition is a straight port of the terminal one — each
-`desktop/app/components/*.js` mirrors the matching `src/*.ts`. It is plain JS
-(no compile step): `tcode-desktop` boots Electron, which loads
-`desktop/app/index.html` directly.
 
 ## License
 

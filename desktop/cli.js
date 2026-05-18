@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// tcode-desktop — console launcher.
+// tcode — console launcher.
 //
-// Boots the Electron app (desktop/main.js) with the user's args forwarded.
-// Mirrors the terminal `tcode` CLI: `tcode-desktop [path]`, `--wrap`,
-// `--theme=`, `--dark`/`--light`, plus `tcode-desktop update`.
+// Boots the Electron app (desktop/main.js) with the user's args forwarded,
+// detached from the terminal. CLI: `tcode [path]`, `--wrap`, `--theme=`,
+// `--dark`/`--light`, plus `tcode update`.
 
 'use strict';
 
@@ -11,16 +11,16 @@ const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 
 // In-app shortcuts use the OS-primary modifier: Cmd on macOS, Ctrl elsewhere.
-const K = (process.platform === 'darwin')
-  ? (k) => '⌘' + k
-  : (k) => 'Ctrl+' + k;
+const isMac = process.platform === 'darwin';
+const K = isMac ? (k) => '⌘' + k : (k) => 'Ctrl+' + k;
+const KS = isMac ? (k) => '⌘⇧' + k : (k) => 'Ctrl+Shift+' + k;
 
-const HELP = `Usage: tcode-desktop [options] [path]
-       tcode-desktop update          reinstall tcode from the latest main
+const HELP = `Usage: tcode [options] [path]
+       tcode update          reinstall tcode from the latest main
 
-Opens the tcode code explorer as a desktop window. Same features as the
-terminal \`tcode\`: file tree, syntax-highlighted viewer, ${K('P')} fuzzy search,
-${K('A')} Claude chat, ${K('G')} git explorer.
+Opens the tcode code explorer in a desktop window: a read-only file tree, a
+syntax-highlighted viewer, ${K('P')} fuzzy search, ${K('A')} Claude chat and a
+${K('G')} git explorer.
 
 Options:
   --no-wrap          long lines scroll horizontally instead of wrapping (default)
@@ -30,17 +30,19 @@ Options:
   -h, --help         show this help
 
 In-app shortcuts:
-  Tab          switch panes (Explorer / Editor / Claude)
-  ${K('P')}       fuzzy file search
-  ${K('A')}       toggle Claude side panel
-  ${K('G')}       git explorer (commits + files + diff)
-  ${K('N')}       (in chat) new conversation
-  ${K('C')}       copy the selected lines in the editor
-  Shift+↑/↓    extend line selection in editor
-  d            toggle dark / light theme
-  w            toggle line wrap
-  Esc          close modal / clear selection
-  ${K('Q')}       quit
+  Tab              switch panes (Explorer / Editor / Claude)
+  ${K('P')}           fuzzy file search
+  ${K('A')}           toggle Claude side panel
+  ${K('G')}           git explorer (commits + files + diff)
+  ${K('Enter')}       open the selected folder as the project root
+  ${K('Backspace')}   go up to the parent folder
+  ${KS('C')}          clone a GitHub repo into the current folder
+  ${K('N')}           (in chat) new conversation
+  ${K('C')}           copy the selected lines in the editor
+  Shift+↑/↓        extend line selection in editor
+  d / w            toggle theme / line wrap
+  Esc              close modal / clear selection
+  ${K('Q')}           quit
 `;
 
 // The canonical install one-liner (kept in sync with README / install.sh).
@@ -49,10 +51,9 @@ const INSTALL_CMD =
 
 const args = process.argv.slice(2);
 
-// `tcode-desktop update`: re-run the install one-liner (clone/pull + build +
-// link). Foreground so the installer's progress is visible.
+// `tcode update`: re-run the install one-liner (clone/pull + link).
 if (args[0] === 'update') {
-  process.stdout.write('tcode-desktop: updating via the install script…\n\n');
+  process.stdout.write('tcode: updating via the install script…\n\n');
   const r = spawnSync('sh', ['-c', INSTALL_CMD], { stdio: 'inherit' });
   process.exit(r.status ?? (r.error ? 1 : 0));
 }
@@ -75,15 +76,15 @@ if (typeof process.getuid === 'function' && process.getuid() === 0) {
 }
 electronArgs.push(...args);
 
-// Launch Electron fully detached (own session, no inherited stdio) so the
-// app keeps running after the terminal that started it is closed. The
-// launcher then unrefs the child and exits right away.
+// Launch Electron fully detached (own session, no inherited stdio) so the app
+// keeps running after the terminal that started it is closed. The launcher
+// then unrefs the child and exits right away.
 const child = spawn(electronPath, electronArgs, {
   detached: true,
   stdio: 'ignore',
 });
 child.on('error', (err) => {
-  process.stderr.write(`tcode-desktop: failed to launch Electron: ${err.message}\n`);
+  process.stderr.write(`tcode: failed to launch Electron: ${err.message}\n`);
   process.exit(1);
 });
 child.unref();

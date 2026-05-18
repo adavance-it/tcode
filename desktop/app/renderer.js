@@ -1,10 +1,12 @@
-// tcode-desktop — renderer entry point. Wires the components together, owns
-// the global keybindings, splitter drag and theme/wrap toggles. Port of the
-// orchestration in src/app.ts.
+// tcode — renderer entry point. Wires the components together and owns the
+// global keybindings, splitter drag, theme/wrap toggles and the project-root
+// (the "home") navigation.
 'use strict';
 
 (function () {
   const path = require('path');
+  const fs = require('fs');
+  const { spawn } = require('child_process');
   const TC = window.TC;
 
   // ── Config handed over by the main process via the file:// query string ──
@@ -15,8 +17,8 @@
 
   TC.theme.apply(initialTheme);
 
-  const fsys = new TC.FileSystem(startDir);
-  const rootName = path.basename(fsys.root) || fsys.root;
+  let fsys = new TC.FileSystem(startDir);
+  let rootName = path.basename(fsys.root) || fsys.root;
   document.title = 'tcode — ' + rootName;
 
   const $ = (id) => document.getElementById(id);
@@ -34,15 +36,21 @@
   const palette = new TC.CommandPalette($('palette'), fsys);
   const chat = new TC.ClaudeChat(chatPane, fsys.root);
   const git = new TC.GitExplorer($('git'), fsys.root);
+  const clone = new TC.CloneModal($('clone'));
   const status = new TC.StatusBar($('statusbar'));
 
   status.update({ wrap: initialWrap, theme: initialTheme });
+
+  function anyModalOpen() {
+    return palette.visible || git.visible || clone.visible;
+  }
 
   // ── Wiring ──
   tree.onOpen = (p) => {
     viewer.load(p);
     viewer.focus();
   };
+  tree.onChangeRoot = (p) => setRoot(p, { pull: true });
 
   viewer.onFileChange = (p) => {
     status.update({ file: p, selection: viewer.selectionRange() });
@@ -85,10 +93,77 @@
     viewer.focus();
   };
 
+  clone.onShow = () => overlay.classList.remove('hidden');
+  clone.onHide = () => {
+    overlay.classList.add('hidden');
+    tree.focus();
+  };
+  clone.onCloned = (clonedPath) => {
+    tree.revealFile(clonedPath); // also rebuilds the tree so the new folder shows
+    palette.invalidate();
+    status.flash('Cloned ' + path.basename(clonedPath));
+  };
+
   overlay.addEventListener('mousedown', () => {
     if (palette.visible) palette.hide();
     else if (git.visible) git.hide();
+    else if (clone.visible) clone.hide();
   });
+
+  // ── Project root ("home") navigation ──
+
+  // Re-root the whole app at `newPath`: every component is scoped to the root.
+  function setRoot(newPath, opts) {
+    opts = opts || {};
+    newPath = path.resolve(newPath);
+    try {
+      if (!fs.statSync(newPath).isDirectory()) return;
+    } catch {
+      return;
+    }
+    if (newPath === fsys.root) return;
+
+    fsys = new TC.FileSystem(newPath);
+    rootName = path.basename(fsys.root) || fsys.root;
+    tree.setRoot(fsys);
+    palette.setRoot(fsys);
+    chat.setRoot(fsys.root);
+    git.setRoot(fsys.root);
+    viewer.reset();
+    status.update({ file: null, selection: null });
+    document.title = 'tcode — ' + rootName;
+    tree.focus();
+
+    if (opts.pull) pullIfRepo(fsys.root);
+  }
+
+  // When the new root is a git repo, pull in the background and refresh.
+  function pullIfRepo(root) {
+    if (!fs.existsSync(path.join(root, '.git'))) return;
+    const name = path.basename(root);
+    status.flash('Pulling ' + name + '…', 120000);
+    let stderr = '';
+    let child;
+    try {
+      child = spawn('git', ['pull', '--ff-only'], { cwd: root });
+    } catch {
+      return;
+    }
+    child.stderr.on('data', (d) => {
+      stderr += d.toString();
+    });
+    child.on('error', () => status.flash('git not available'));
+    child.on('close', (code) => {
+      if (fsys.root !== root) return; // root changed again while pulling
+      if (code === 0) {
+        tree.rebuild();
+        palette.invalidate();
+        status.flash('Pulled ' + name);
+      } else {
+        status.flash('Pull failed: ' + (stderr.trim().split('\n').pop() || 'exit ' + code));
+      }
+    });
+  }
 
   // ── Chat toggle (carries the editor's line selection as context) ──
   function toggleChat() {
@@ -126,7 +201,7 @@
   document.addEventListener(
     'keydown',
     (e) => {
-      if (palette.visible || git.visible) return; // an open modal owns the keyboard
+      if (anyModalOpen()) return; // an open modal owns the keyboard
 
       const ae = document.activeElement;
       const typing =
@@ -136,14 +211,24 @@
         e.preventDefault();
         e.stopPropagation();
       };
-
       const mod = TC.platform.mod(e);
+
+      if (mod && e.shiftKey && (e.key === 'c' || e.key === 'C')) {
+        take();
+        clone.show(fsys.root);
+        return;
+      }
+      if (mod && e.key === 'Backspace' && !typing) {
+        take();
+        setRoot(path.dirname(fsys.root), { pull: true });
+        return;
+      }
       if (mod && e.key === 'q') { take(); quit(); return; }
       if (mod && e.key === 'p') { take(); palette.show(); return; }
       if (mod && e.key === 'a') { take(); toggleChat(); return; }
       if (mod && e.key === 'g') { take(); git.show(); return; }
       // Leave every other modifier combo alone (copy, reload, the editor's
-      // own Cmd/Ctrl+C handler, …).
+      // own Cmd/Ctrl+C and Cmd/Ctrl+Enter handlers, …).
       if (e.ctrlKey || e.metaKey) return;
 
       if (e.key === 'Tab' && !inChat) { take(); switchPane(); return; }
@@ -156,6 +241,11 @@
     },
     true
   );
+
+  // Whenever the window regains focus, put the cursor back on the file tree.
+  window.addEventListener('focus', () => {
+    if (!anyModalOpen()) tree.focus();
+  });
 
   // ── Splitter drag ──
   const MIN_PANE = 150;

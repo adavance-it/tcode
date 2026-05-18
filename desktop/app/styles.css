@@ -628,3 +628,46 @@ body {
 .md a.ref:hover { background: var(--hl-line); }
 .chat-status { color: var(--fg-dim); padding: 4px 0; }
 .chat-error { color: var(--diff-del-fg); white-space: pre-wrap; font-family: var(--mono); }
+
+/* ─── Clone modal ───────────────────────────────────────────────────────── */
+
+.clone-modal {
+  top: 22%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(540px, 82vw);
+}
+.clone-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+}
+.clone-label { font-size: 11.5px; color: var(--fg-dim); }
+.clone-input {
+  height: 34px;
+  padding: 0 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--fg);
+  font-family: var(--ui);
+  font-size: 13.5px;
+  outline: none;
+}
+.clone-input:focus { border-color: var(--border-focus); }
+.clone-input:disabled { opacity: 0.6; }
+.clone-status {
+  min-height: 1.5em;
+  font-size: 12px;
+  color: var(--fg-dim);
+  font-family: var(--mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.clone-status.err { color: var(--diff-del-fg); }
+.clone-hint { font-size: 11px; color: var(--fg-dim); }
+
+/* status-bar transient flash message */
+#statusbar .sb-flash { font-weight: 600; }

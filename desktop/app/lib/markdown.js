@@ -1,7 +1,6 @@
-// Minimal markdown → HTML renderer for the Claude chat answer area. Ported
-// from renderMarkdown/renderInline in src/claude.ts: headings, lists, bold,
-// italic, inline code, fenced code (syntax-highlighted), and file refs of the
-// form `path/to/file.ext:LINE` turned into clickable links.
+// Minimal markdown → HTML renderer for the Claude chat answer area: headings,
+// lists, bold, italic, inline code, fenced code (syntax-highlighted), and file
+// refs of the form `path/to/file.ext:LINE` turned into clickable links.
 'use strict';
 
 (function () {

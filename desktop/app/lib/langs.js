@@ -1,5 +1,4 @@
-// Map a file path to a highlight.js language id. Ported from the EXT_TO_LANG
-// table + detectLanguage() in src/viewer.ts.
+// Map a file path to a highlight.js language id.
 'use strict';
 
 (function () {

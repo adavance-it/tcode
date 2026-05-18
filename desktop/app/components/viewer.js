@@ -1,10 +1,9 @@
 // Editor pane — read-only, syntax-highlighted file viewer with a line-number
-// gutter and a line-range selection. Port of src/viewer.ts.
+// gutter and a line-range selection.
 //
-// Selection is line-based (like the terminal edition): click a line to select
-// it, drag across the code to select a block, Shift+↑/↓ to extend. The
-// selection is what Ctrl/Cmd+A sends to Claude as context, and Ctrl/Cmd+C
-// copies the selected lines to the clipboard.
+// Selection is line-based: click a line to select it, drag across the code to
+// select a block, Shift+↑/↓ to extend. The selection is what Cmd/Ctrl+A sends
+// to Claude as context, and Cmd/Ctrl+C copies the selected lines.
 'use strict';
 
 (function () {
@@ -76,16 +75,20 @@
 
     _welcomeHtml() {
       const c = TC.platform.combo;
+      const cs = TC.platform.comboShift;
       const rows = [
         ['Tab', 'Switch Explorer / Editor / Claude'],
         ['Enter', 'Open file / toggle directory'],
+        [c('Enter'), 'Open the selected folder as the project root'],
+        [c('Backspace'), 'Go up to the parent folder'],
+        [cs('C'), 'Clone a GitHub repo into the current folder'],
         [c('P'), 'Fuzzy file search'],
         [c('A'), 'Ask Claude about the codebase'],
         [c('G'), 'Git explorer — commits, files, diffs'],
-        ['j k ↑ ↓', 'Scroll · g / G jump to top / bottom'],
-        ['drag', 'Select a block of lines · Shift+↑/↓ extends'],
+        ['drag · Shift+↑↓', 'Select a block of lines'],
         [c('C'), 'Copy the selected lines'],
-        ['w', 'Toggle line wrap · d toggle theme'],
+        ['j k ↑ ↓ · g G', 'Scroll · top / bottom'],
+        ['w · d', 'Toggle line wrap / theme'],
         [c('Q'), 'Quit'],
       ];
       const keyRows = rows
@@ -301,6 +304,20 @@
         return;
       }
       e.preventDefault();
+    }
+
+    // Clear the open file and return to the welcome screen (used when the
+    // project root changes).
+    reset() {
+      this.currentFile = null;
+      this.rawLines = [];
+      this.lineEls = [];
+      this.selAnchor = null;
+      this.selActive = null;
+      this.hlLine = null;
+      this.dragging = false;
+      if (this.label) this.label.textContent = 'Editor';
+      this.body.innerHTML = this._welcomeHtml();
     }
 
     focus() {

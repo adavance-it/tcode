@@ -1,4 +1,4 @@
-// Ctrl/Cmd+A Claude side panel. Port of src/claude.ts.
+// Cmd/Ctrl+A Claude side panel.
 //
 // Runs `claude -p` in the project directory with stream-json output so the
 // answer renders token-by-token as Claude types it. The answer is rendered as
@@ -158,6 +158,13 @@
     focusInput() {
       this.input.focus();
       this.input.select();
+    }
+
+    // Point the chat at a different project root and start fresh — the old
+    // conversation's file refs belong to the previous project.
+    setRoot(root) {
+      this.root = root;
+      this.newConversation();
     }
 
     newConversation() {

@@ -65,22 +65,17 @@ main() {
 
   cd "$TARGET_DIR"
 
-  log "Installing dependencies"
+  log "Installing dependencies (this downloads Electron)"
   npm install --silent --no-audit --no-fund
 
-  log "Building"
-  npm run --silent build
-
-  log "Linking 'tcode' and 'tcode-desktop' on your PATH"
+  log "Linking 'tcode' on your PATH"
   npm link --silent
 
   if command -v tcode >/dev/null 2>&1; then
-    ok "Installed:"
-    ok "  tcode           $(command -v tcode)"
-    ok "  tcode-desktop   $(command -v tcode-desktop 2>/dev/null || echo '(same prefix)')"
-    ok "Try it:  tcode ~/some/repo     (or: tcode-desktop ~/some/repo)"
+    ok "Installed at $(command -v tcode)"
+    ok "Run it:  tcode ~/some/repo"
   else
-    warn "Built and linked, but 'tcode' is not on your PATH."
+    warn "Linked, but 'tcode' is not on your PATH."
     warn "Add npm's global bin to PATH and reopen your shell:"
     warn "  export PATH=\"\$(npm prefix -g)/bin:\$PATH\""
   fi

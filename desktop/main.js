@@ -1,11 +1,10 @@
-// tcode-desktop — Electron main process.
+// tcode — Electron main process.
 //
-// Mirrors the terminal `tcode` (src/index.ts): same CLI surface, same start-
-// directory resolution, same best-effort background self-update. The window it
-// opens loads desktop/app/index.html, the desktop port of the whole UI.
+// Resolves the start directory, runs a best-effort background self-update, and
+// opens the window (desktop/app/index.html).
 //
 // Two launch paths:
-//   • as a command — `tcode-desktop [path]` (desktop/cli.js) — takes a path arg.
+//   • as a command — `tcode [path]` (desktop/cli.js) — takes a path argument.
 //   • as a packaged macOS .app — launched from Finder with no arguments, so it
 //     opens a folder picker (remembering the last folder).
 
@@ -17,7 +16,7 @@ const { spawn } = require('child_process');
 
 app.setName('tcode');
 
-// ─── CLI arg parsing (parity with src/index.ts) ───────────────────────────
+// ─── CLI arg parsing ──────────────────────────────────────────────────────
 
 function resolveStartDir(arg) {
   let d = arg;

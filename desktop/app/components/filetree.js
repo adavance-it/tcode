@@ -1,6 +1,7 @@
-// Explorer pane — a flattened, expand/collapse file tree. Port of
-// src/filetree.ts. The mouse wheel scrolls the viewport only (native overflow
-// scroll); the selection moves on keyboard nav or an explicit click.
+// Explorer pane — a flattened, expand/collapse file tree. The mouse wheel
+// scrolls the viewport only; the selection moves on keyboard nav or a click.
+// Cmd/Ctrl+Enter (or Cmd/Ctrl+double-click) on a folder makes it the new
+// project root.
 'use strict';
 
 (function () {
@@ -17,6 +18,7 @@
       this.rows = [];
       this.selected = 0;
       this.onOpen = () => {};
+      this.onChangeRoot = () => {};
 
       const label = document.getElementById('tree-label');
       if (label) label.textContent = path.basename(fileSystem.root) || fileSystem.root;
@@ -68,7 +70,14 @@
           e.preventDefault();
           this.pane.focus();
           this.setSelected(idx, false);
+          // Cmd/Ctrl+click only selects — Cmd/Ctrl+double-click re-roots.
+          if (TC.platform.mod(e)) return;
           this.activate(idx);
+        });
+        row.addEventListener('dblclick', (e) => {
+          if (!TC.platform.mod(e)) return;
+          const it = this.items[idx];
+          if (it && it.isDirectory) this.onChangeRoot(it.path);
         });
         frag.appendChild(row);
         this.rows.push(row);
@@ -129,6 +138,13 @@
 
     handleKey(e) {
       const k = e.key;
+      // Cmd/Ctrl+Enter on a folder makes it the new project root.
+      if (TC.platform.mod(e) && k === 'Enter') {
+        const it = this.items[this.selected];
+        if (it && it.isDirectory) this.onChangeRoot(it.path);
+        e.preventDefault();
+        return;
+      }
       if (k === 'ArrowDown' || k === 'j') {
         this.setSelected(this.selected + 1);
       } else if (k === 'ArrowUp' || k === 'k') {
@@ -170,6 +186,16 @@
       this.rebuild();
       const idx = this.items.findIndex((it) => it.path === filePath);
       if (idx >= 0) this.setSelected(idx);
+    }
+
+    // Point the tree at a different root directory.
+    setRoot(fileSystem) {
+      this.fs = fileSystem;
+      this.expanded = new Set([fileSystem.root]);
+      this.selected = 0;
+      const label = document.getElementById('tree-label');
+      if (label) label.textContent = path.basename(fileSystem.root) || fileSystem.root;
+      this.rebuild();
     }
   }
 

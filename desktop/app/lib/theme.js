@@ -1,6 +1,6 @@
 // Theme management — dark / light, plus swapping the highlight.js stylesheet.
-// Ported from src/theme.ts; in the desktop build the colors live in styles.css
-// (CSS custom properties) and this module just flips the mode + hljs theme.
+// The colors live in styles.css (CSS custom properties); this module flips the
+// mode class and points the hljs <link> at the matching theme.
 'use strict';
 
 (function () {

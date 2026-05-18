@@ -1,4 +1,4 @@
-// Ctrl+G git explorer. Port of src/git.ts.
+// Cmd/Ctrl+G git explorer.
 //
 // Left pane: a commit log (with --graph + a synthetic "Uncommitted changes"
 // entry). Right pane: the diff. Enter on a commit drills into its file list;
@@ -111,6 +111,11 @@
       this.visible = false;
       this.modal.classList.add('hidden');
       this.onHide();
+    }
+
+    // Point the git explorer at a different repository root.
+    setRoot(root) {
+      this.root = root;
     }
 
     _loadCommits() {

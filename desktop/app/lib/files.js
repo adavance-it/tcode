@@ -1,4 +1,4 @@
-// Gitignore-aware filesystem walker. Direct port of src/files.ts.
+// Gitignore-aware filesystem walker.
 'use strict';
 
 (function () {

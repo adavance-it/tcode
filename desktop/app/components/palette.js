@@ -1,4 +1,4 @@
-// Ctrl+P fuzzy file search modal. Port of src/palette.ts.
+// Cmd/Ctrl+P fuzzy file search modal.
 'use strict';
 
 (function () {
@@ -28,12 +28,30 @@
         `spellcheck="false" placeholder="Type to fuzzy-search files…" /></div>` +
         `<div class="pal-list"></div>` +
         `<div class="pal-count"></div>`;
+      this.head = this.modal.querySelector('.modal-head');
       this.input = this.modal.querySelector('.pal-input');
       this.list = this.modal.querySelector('.pal-list');
       this.count = this.modal.querySelector('.pal-count');
 
       this.input.addEventListener('keydown', (e) => this._key(e));
       this.input.addEventListener('input', () => this.refresh());
+    }
+
+    // Point the search at a different root directory.
+    setRoot(fileSystem) {
+      this.fs = fileSystem;
+      this.invalidate();
+      const scope = path.basename(fileSystem.root) || fileSystem.root;
+      if (this.head) this.head.textContent = `Search files in ${scope} — Esc to close`;
+    }
+
+    // Drop the cached file index so it is rebuilt on next open (after a pull,
+    // clone or root change).
+    invalidate() {
+      this.fuse = null;
+      this.files = [];
+      this.results = [];
+      this.selected = 0;
     }
 
     _ensureIndex() {

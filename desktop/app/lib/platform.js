@@ -25,5 +25,9 @@
     combo(key) {
       return isMac ? '⌘' + key : 'Ctrl+' + key;
     },
+    // Same, with Shift: "⌘⇧C" on mac, "Ctrl+Shift+C" elsewhere.
+    comboShift(key) {
+      return isMac ? '⌘⇧' + key : 'Ctrl+Shift+' + key;
+    },
   };
 })();
