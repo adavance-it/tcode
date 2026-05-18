@@ -142,7 +142,8 @@ sent as context.
 ## Git explorer
 
 `⌘G` opens a two-pane modal: recent commits on the left, the diff on the right.
-A synthetic "Uncommitted changes" entry shows the working tree. `Enter` on a
+Opening it runs a background `git pull --ff-only` so the history is current. A
+synthetic "Uncommitted changes" entry shows the working tree. `Enter` on a
 commit lists its files; `Enter` on a file opens it in the editor; `o` jumps
 straight to the first file touched; `Tab` moves between panes; `Esc` closes.
 

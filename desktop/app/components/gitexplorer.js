@@ -2,11 +2,13 @@
 //
 // Left pane: a commit log (with --graph + a synthetic "Uncommitted changes"
 // entry). Right pane: the diff. Enter on a commit drills into its file list;
-// Enter on a file opens it in the editor.
+// Enter on a file opens it in the editor. Opening the explorer runs a
+// background `git pull` so the history shown is current.
 'use strict';
 
 (function () {
-  const { spawnSync } = require('child_process');
+  const { spawnSync, spawn } = require('child_process');
+  const fs = require('fs');
   const path = require('path');
   const TC = (window.TC = window.TC || {});
 
@@ -104,6 +106,46 @@
       this._loadCommits();
       this.list.focus();
       this._refreshHint();
+      this._pull();
+    }
+
+    // Background `git pull --ff-only` on open — reloads the commit list if it
+    // actually brought anything down.
+    _pull() {
+      if (this._pulling) return;
+      if (!fs.existsSync(path.join(this.root, '.git'))) return;
+      this._pulling = true;
+      this.hint.textContent = 'Pulling latest…';
+      let out = '';
+      let child;
+      try {
+        child = spawn('git', ['pull', '--ff-only'], { cwd: this.root });
+      } catch {
+        this._pulling = false;
+        this._refreshHint();
+        return;
+      }
+      child.stdout.on('data', (d) => { out += d.toString(); });
+      child.stderr.on('data', (d) => { out += d.toString(); });
+      child.on('error', () => {
+        this._pulling = false;
+        if (this.visible) this._refreshHint();
+      });
+      child.on('close', (code) => {
+        this._pulling = false;
+        if (!this.visible) return;
+        if (code === 0) {
+          if (this.mode === 'commits' && !/already up[- ]to[- ]date/i.test(out)) {
+            this._loadCommits();
+          }
+          this._refreshHint();
+        } else {
+          this.hint.textContent = 'Pull failed — showing local history';
+          setTimeout(() => {
+            if (this.visible) this._refreshHint();
+          }, 3000);
+        }
+      });
     }
 
     hide() {
