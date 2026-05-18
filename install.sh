@@ -71,12 +71,14 @@ main() {
   log "Building"
   npm run --silent build
 
-  log "Linking 'tcode' on your PATH"
+  log "Linking 'tcode' and 'tcode-desktop' on your PATH"
   npm link --silent
 
   if command -v tcode >/dev/null 2>&1; then
-    ok "Installed at $(command -v tcode)"
-    ok "Try it:  tcode ~/some/repo"
+    ok "Installed:"
+    ok "  tcode           $(command -v tcode)"
+    ok "  tcode-desktop   $(command -v tcode-desktop 2>/dev/null || echo '(same prefix)')"
+    ok "Try it:  tcode ~/some/repo     (or: tcode-desktop ~/some/repo)"
   else
     warn "Built and linked, but 'tcode' is not on your PATH."
     warn "Add npm's global bin to PATH and reopen your shell:"

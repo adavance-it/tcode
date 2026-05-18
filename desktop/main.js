@@ -2,22 +2,24 @@
 //
 // Mirrors the terminal `tcode` (src/index.ts): same CLI surface, same start-
 // directory resolution, same best-effort background self-update. The window it
-// opens loads desktop/app/index.html, which is the desktop port of the whole
-// blessed UI (file tree + viewer + Ctrl+P palette + Ctrl+A Claude chat +
-// Ctrl+G git explorer).
+// opens loads desktop/app/index.html, the desktop port of the whole UI.
+//
+// Two launch paths:
+//   • as a command — `tcode-desktop [path]` (desktop/cli.js) — takes a path arg.
+//   • as a packaged macOS .app — launched from Finder with no arguments, so it
+//     opens a folder picker (remembering the last folder).
 
-const { app, BrowserWindow, Menu, nativeTheme, shell } = require('electron');
+const { app, BrowserWindow, Menu, nativeTheme, shell, dialog } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const { spawn } = require('child_process');
 
+app.setName('tcode');
+
 // ─── CLI arg parsing (parity with src/index.ts) ───────────────────────────
 
-// Resolve the directory tcode should operate on. No arg → cwd; `<path>` → that
-// path. `~` / `~/...` are expanded. Both forms are equivalent.
 function resolveStartDir(arg) {
-  if (!arg) return process.cwd();
   let d = arg;
   if (d === '~') d = os.homedir();
   else if (d.startsWith('~/')) d = path.join(os.homedir(), d.slice(2));
@@ -36,8 +38,6 @@ function parseArgs(argv) {
     else if (a.startsWith('--theme=')) {
       const v = a.slice('--theme='.length);
       if (v === 'dark' || v === 'light' || v === 'auto') theme = v;
-    } else if (a === '-h' || a === '--help') {
-      // --help is handled in cli.js before Electron boots; ignore here.
     } else if (!a.startsWith('-')) {
       dir = a;
     }
@@ -46,8 +46,7 @@ function parseArgs(argv) {
 }
 
 // Best-effort self-update: pull the latest tcode in the background so the NEXT
-// launch is current. Never blocks or crashes startup. (desktop/ is plain JS so
-// no rebuild is needed — a plain `git pull` is enough.)
+// launch is current. No-ops in a packaged app (no .git). Never blocks.
 function selfUpdate() {
   try {
     const repoRoot = path.resolve(__dirname, '..');
@@ -61,6 +60,49 @@ function selfUpdate() {
   } catch {
     /* updating is never allowed to break the app */
   }
+}
+
+// ─── Last-folder memory (for the Finder-launch folder picker) ──────────────
+
+function lastFolderFile() {
+  return path.join(app.getPath('userData'), 'last-folder.txt');
+}
+
+function readLastFolder() {
+  try {
+    const p = fs.readFileSync(lastFolderFile(), 'utf8').trim();
+    if (p && fs.statSync(p).isDirectory()) return p;
+  } catch {
+    /* none yet */
+  }
+  return null;
+}
+
+function saveLastFolder(dir) {
+  try {
+    fs.writeFileSync(lastFolderFile(), dir);
+  } catch {
+    /* non-fatal */
+  }
+}
+
+// Decide which directory to open:
+//   1. an explicit path argument always wins;
+//   2. a packaged app with no argument (Finder launch) asks via a dialog;
+//   3. a dev launch with no argument uses the current working directory.
+async function resolveStartDirInteractive(parsed) {
+  if (parsed.dir) return resolveStartDir(parsed.dir);
+  if (app.isPackaged) {
+    const res = await dialog.showOpenDialog({
+      title: 'Open a folder in tcode',
+      buttonLabel: 'Open',
+      defaultPath: readLastFolder() || app.getPath('home'),
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (res.canceled || !res.filePaths.length) return null;
+    return res.filePaths[0];
+  }
+  return process.cwd();
 }
 
 // ─── Window ───────────────────────────────────────────────────────────────
@@ -103,7 +145,6 @@ function createWindow(opts) {
     },
   });
 
-  // Open real external links in the OS browser, never inside the app window.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: 'deny' };
@@ -114,17 +155,14 @@ function createWindow(opts) {
   });
 }
 
-// Minimal menu: hidden by default (autoHideMenuBar), but kept so the standard
-// edit-role accelerators (copy/paste/select-all) and devtools work — macOS in
-// particular needs the Edit menu roles for clipboard shortcuts in inputs.
+// Minimal menu: hidden by default, but kept so the standard edit-role
+// accelerators (copy/paste/select-all) and devtools work — macOS in particular
+// needs the Edit menu roles for clipboard shortcuts in inputs.
 function buildMenu() {
   const isMac = process.platform === 'darwin';
   const template = [
     ...(isMac ? [{ role: 'appMenu' }] : []),
-    {
-      label: 'File',
-      submenu: [isMac ? { role: 'close' } : { role: 'quit' }],
-    },
+    { label: 'File', submenu: [isMac ? { role: 'close' } : { role: 'quit' }] },
     { role: 'editMenu' },
     {
       label: 'View',
@@ -146,33 +184,39 @@ function buildMenu() {
 
 // ─── Boot ─────────────────────────────────────────────────────────────────
 
-// argv: [electron, main.js, ...userArgs]  (or [tcode-desktop, ...userArgs]
-// when packaged). app.isPackaged decides where the user args start.
+// argv: [electron, main.js, ...userArgs] in dev; [tcode, ...userArgs] packaged.
 const userArgs = process.argv.slice(app.isPackaged ? 1 : 2);
 const parsed = parseArgs(userArgs);
-const startDir = resolveStartDir(parsed.dir);
 
-// Validate the start directory up front, same as src/index.ts.
-let dirOk = true;
-try {
-  if (!fs.statSync(startDir).isDirectory()) dirOk = false;
-} catch {
-  dirOk = false;
-}
-if (!dirOk) {
-  process.stderr.write(`tcode: no such directory: ${startDir}\n`);
-  app.quit();
-  process.exit(1);
-}
-
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   buildMenu();
+
+  const dir = await resolveStartDirInteractive(parsed);
+  if (dir === null) {
+    // User dismissed the folder picker — nothing to open.
+    app.quit();
+    return;
+  }
+
+  let dirOk = true;
+  try {
+    if (!fs.statSync(dir).isDirectory()) dirOk = false;
+  } catch {
+    dirOk = false;
+  }
+  if (!dirOk) {
+    dialog.showErrorBox('tcode', `Not a directory:\n${dir}`);
+    app.quit();
+    return;
+  }
+
+  saveLastFolder(dir);
   selfUpdate();
-  createWindow({ startDir, wrap: parsed.wrap, theme: parsed.theme });
+  createWindow({ startDir: dir, wrap: parsed.wrap, theme: parsed.theme });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow({ startDir, wrap: parsed.wrap, theme: parsed.theme });
+      createWindow({ startDir: dir, wrap: parsed.wrap, theme: parsed.theme });
     }
   });
 });

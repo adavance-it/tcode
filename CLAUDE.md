@@ -30,6 +30,22 @@ mirror `src/*.ts` one-to-one.
 - The mouse-wheel rule below is satisfied for free in the desktop edition —
   native overflow scrolling never moves a selection.
 
+### Packaging the macOS app
+
+- `npm run package:mac` runs `electron-builder` (config in the `build` key of
+  `package.json`) and emits a `.dmg` + `.zip` into `dist-desktop/`. Must run
+  on macOS. `npm run package:mac:dir` emits just the unpacked `.app`.
+- `electron` and `electron-builder` are **devDependencies** — electron-builder
+  refuses to package when `electron` is a regular dependency. The
+  `tcode-desktop` CLI still works because `install.sh` / `run-desktop.sh` do a
+  full `npm install` (devDeps included).
+- The app icon is `build/icon.png` (1024×1024, rendered from `build/icon.svg`
+  with `rsvg-convert`).
+- `highlight.js/styles/**` is in `asarUnpack` so the theme stylesheet loads
+  from a real file path, not from inside the asar archive.
+- A packaged app launched from Finder gets no path argument, so `main.js`
+  shows a folder picker (remembering the last folder in `userData`).
+
 ## UI principle: the mouse wheel never moves the selection
 
 This is a hard, app-wide rule for every list / scrollable widget:

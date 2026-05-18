@@ -1,6 +1,6 @@
 {
   "name": "tcode",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Read-only VS Code-like code explorer with Claude integration — terminal (tcode) and desktop (tcode-desktop) editions",
   "bin": {
     "tcode": "dist/index.js",
@@ -12,20 +12,43 @@
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "desktop": "electron desktop/main.js",
+    "package:mac": "electron-builder --mac",
+    "package:mac:dir": "electron-builder --mac --dir",
     "prepare": "[ ! -d src ] || npm run build"
   },
   "files": [
     "dist",
     "src",
     "desktop",
+    "build",
     "tsconfig.json",
-    "install.sh"
+    "install.sh",
+    "run-desktop.sh"
   ],
   "license": "MIT",
+  "author": "Adavance",
+  "build": {
+    "appId": "com.adavance.tcode",
+    "productName": "tcode",
+    "directories": {
+      "buildResources": "build",
+      "output": "dist-desktop"
+    },
+    "asarUnpack": [
+      "**/node_modules/highlight.js/styles/**"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "build/icon.png"
+    }
+  },
   "dependencies": {
     "blessed": "^0.1.81",
     "cli-highlight": "^2.1.11",
-    "electron": "^32.2.0",
     "fuse.js": "^7.0.0",
     "highlight.js": "^11.10.0",
     "ignore": "^5.3.1"
@@ -33,6 +56,8 @@
   "devDependencies": {
     "@types/blessed": "^0.1.25",
     "@types/node": "^20.11.0",
+    "electron": "^32.2.0",
+    "electron-builder": "^26.0.0",
     "tsx": "^4.7.0",
     "typescript": "^5.3.0"
   }

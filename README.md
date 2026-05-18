@@ -79,6 +79,25 @@ The shortcuts below apply to both editions, with two desktop differences:
 
 `npm run desktop` runs it from a checkout without installing.
 
+### Install it as a macOS app
+
+To get a real `tcode.app` you can drop in **Applications** (Dock icon and
+all), build it on a Mac from a checkout:
+
+```bash
+npm install
+npm run package:mac      # → dist-desktop/tcode-<version>-<arch>.dmg + .zip
+```
+
+Open the `.dmg` and drag **tcode** to Applications. Launched from Finder the
+app has no path argument, so it opens a folder picker (it remembers the last
+folder you opened). The `tcode-desktop` terminal command keeps working
+alongside the app.
+
+The build is unsigned, so the first launch needs a right-click → **Open** (or
+`xattr -dr com.apple.quarantine /Applications/tcode.app`). `npm run
+package:mac:dir` produces just the unpacked `.app` without the installer.
+
 ## Shortcuts
 
 ### Navigation
