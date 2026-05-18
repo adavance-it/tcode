@@ -75,12 +75,15 @@ if (typeof process.getuid === 'function' && process.getuid() === 0) {
 }
 electronArgs.push(...args);
 
+// Launch Electron fully detached (own session, no inherited stdio) so the
+// app keeps running after the terminal that started it is closed. The
+// launcher then unrefs the child and exits right away.
 const child = spawn(electronPath, electronArgs, {
-  stdio: 'inherit',
-  windowsHide: false,
+  detached: true,
+  stdio: 'ignore',
 });
-child.on('close', (code) => process.exit(code == null ? 0 : code));
 child.on('error', (err) => {
   process.stderr.write(`tcode-desktop: failed to launch Electron: ${err.message}\n`);
   process.exit(1);
 });
+child.unref();
