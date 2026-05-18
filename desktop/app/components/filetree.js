@@ -197,6 +197,13 @@
       if (label) label.textContent = path.basename(fileSystem.root) || fileSystem.root;
       this.rebuild();
     }
+
+    // The directory whose immediate sub-folders sit at the selected row's
+    // level — i.e. the parent of the highlighted item (root if none).
+    currentLevelDir() {
+      const it = this.items[this.selected];
+      return it ? path.dirname(it.path) : this.fs.root;
+    }
   }
 
   TC.FileTree = FileTree;

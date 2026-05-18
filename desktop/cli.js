@@ -14,6 +14,7 @@ const { spawn, spawnSync } = require('child_process');
 const isMac = process.platform === 'darwin';
 const K = isMac ? (k) => '⌘' + k : (k) => 'Ctrl+' + k;
 const KS = isMac ? (k) => '⌘⇧' + k : (k) => 'Ctrl+Shift+' + k;
+const KA = isMac ? (k) => '⌥' + k : (k) => 'Alt+' + k;
 
 const HELP = `Usage: tcode [options] [path]
        tcode update          reinstall tcode from the latest main
@@ -35,6 +36,7 @@ In-app shortcuts:
   ${K('A')}           toggle Claude side panel
   ${K('G')}           git explorer (commits + files + diff)
   ${K('Enter')}       open the selected folder as the project root
+  ${KA('Enter')}       pick a folder at this level to open as root
   ${K('Backspace')}   go up to the parent folder
   ${KS('C')}          clone a GitHub repo into the current folder
   ${K('N')}           (in chat) new conversation

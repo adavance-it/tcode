@@ -1,4 +1,5 @@
 // Cmd/Ctrl+Shift+C — clone a GitHub repository into the current project root.
+// Always clones over SSH so it uses the user's personal SSH key.
 'use strict';
 
 (function () {
@@ -6,14 +7,21 @@
   const { spawn } = require('child_process');
   const TC = (window.TC = window.TC || {});
 
-  // Build a clone URL from "owner/repo", a full https/ssh/git URL, or return
-  // null when the input doesn't look like either.
+  // Build an SSH clone URL from "owner/repo" or an https GitHub URL, pass an
+  // SSH URL straight through, and return null when the input is unusable.
   function repoUrl(input) {
     input = input.trim();
     if (!input) return null;
-    if (/^(https?:\/\/|git@|ssh:\/\/)/.test(input)) return input;
-    const m = input.match(/^([\w.-]+)\/([\w.-]+?)(?:\.git)?$/);
-    if (m) return `https://github.com/${m[1]}/${m[2]}.git`;
+    // Already an SSH URL — use it as-is.
+    if (/^(git@|ssh:\/\/)/.test(input)) return input;
+    // An https GitHub URL — rewrite to SSH so it uses the personal key.
+    let m = input.match(/^https?:\/\/github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i);
+    if (m) return `git@github.com:${m[1]}/${m[2]}.git`;
+    // "owner/repo" shorthand → SSH GitHub.
+    m = input.match(/^([\w.-]+)\/([\w.-]+?)(?:\.git)?$/);
+    if (m) return `git@github.com:${m[1]}/${m[2]}.git`;
+    // Any other URL — leave it untouched.
+    if (/^https?:\/\//.test(input)) return input;
     return null;
   }
 
@@ -37,7 +45,7 @@
       this.modal.innerHTML =
         '<div class="modal-head">Clone a repository — Esc to cancel</div>' +
         '<div class="clone-body">' +
-        '<label class="clone-label">GitHub repo (owner/repo) or a full git URL</label>' +
+        '<label class="clone-label">GitHub repo (owner/repo) — cloned over SSH</label>' +
         '<input class="clone-input" type="text" spellcheck="false" ' +
         'placeholder="adavance-it/tcode" />' +
         '<div class="clone-status"></div>' +

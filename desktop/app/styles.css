@@ -406,6 +406,15 @@ body {
   font-size: 11.5px;
 }
 
+/* Folder quick-pick (Alt+Enter) — reuses the .pal-* row styles */
+.folderpick-modal {
+  top: 16%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(480px, 78vw);
+  height: min(380px, 60vh);
+}
+
 /* Git explorer */
 .git-modal { top: 5%; left: 5%; width: 90%; height: 90%; }
 .git-body { flex: 1 1 auto; display: flex; min-height: 0; }

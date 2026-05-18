@@ -76,10 +76,12 @@
     _welcomeHtml() {
       const c = TC.platform.combo;
       const cs = TC.platform.comboShift;
+      const ca = TC.platform.comboAlt;
       const rows = [
         ['Tab', 'Switch Explorer / Editor / Claude'],
         ['Enter', 'Open file / toggle directory'],
         [c('Enter'), 'Open the selected folder as the project root'],
+        [ca('Enter'), 'Pick a folder at this level to open as root'],
         [c('Backspace'), 'Go up to the parent folder'],
         [cs('C'), 'Clone a GitHub repo into the current folder'],
         [c('P'), 'Fuzzy file search'],

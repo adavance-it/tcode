@@ -34,6 +34,7 @@
   const tree = new TC.FileTree($('tree-body'), treePane, fsys);
   const viewer = new TC.Viewer($('viewer-body'), viewerPane, { wrap: initialWrap });
   const palette = new TC.CommandPalette($('palette'), fsys);
+  const folderpick = new TC.FolderPick($('folderpick'));
   const chat = new TC.ClaudeChat(chatPane, fsys.root);
   const git = new TC.GitExplorer($('git'), fsys.root);
   const clone = new TC.CloneModal($('clone'));
@@ -42,7 +43,7 @@
   status.update({ wrap: initialWrap, theme: initialTheme });
 
   function anyModalOpen() {
-    return palette.visible || git.visible || clone.visible;
+    return palette.visible || folderpick.visible || git.visible || clone.visible;
   }
 
   // ── Wiring ──
@@ -68,6 +69,13 @@
   palette.onHide = () => {
     overlay.classList.add('hidden');
     viewer.focus();
+  };
+
+  folderpick.onSelect = (p) => setRoot(p, { pull: true });
+  folderpick.onShow = () => overlay.classList.remove('hidden');
+  folderpick.onHide = () => {
+    overlay.classList.add('hidden');
+    tree.focus();
   };
 
   chat.onOpenFile = (p, line) => {
@@ -106,6 +114,7 @@
 
   overlay.addEventListener('mousedown', () => {
     if (palette.visible) palette.hide();
+    else if (folderpick.visible) folderpick.hide();
     else if (git.visible) git.hide();
     else if (clone.visible) clone.hide();
   });
@@ -211,6 +220,13 @@
         e.preventDefault();
         e.stopPropagation();
       };
+      // Alt/Option+Enter — pick a folder at the highlighted item's level.
+      if (e.altKey && e.key === 'Enter') {
+        take();
+        folderpick.show(tree.currentLevelDir());
+        return;
+      }
+
       const mod = TC.platform.mod(e);
 
       if (mod && e.shiftKey && (e.key === 'c' || e.key === 'C')) {
